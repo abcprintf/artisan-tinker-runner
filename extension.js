@@ -3,10 +3,12 @@ const path = require('path');
 const { spawn } = require('child_process');
 const fs = require('fs');
 const crypto = require('crypto');
+const https = require('https');
 
 class TinkerSidebarProvider {
-    constructor(extensionUri) {
+    constructor(extensionUri, context) {
         this.extensionUri = extensionUri;
+        this._context = context;
         this._webview = null;
         this._proc = null;
         this._replProc = null;
@@ -38,14 +40,28 @@ class TinkerSidebarProvider {
             } else if (message.command === 'resetRepl') {
                 this._killReplProc();
                 webviewView.webview.postMessage({ type: 'replReset' });
+            } else if (message.command === 'shareGist') {
+                await this._shareGist(message.code, message.output, webviewView.webview);
+            } else if (message.command === 'runTest') {
+                await this._runTest(message.filter, webviewView.webview);
+            } else if (message.command === 'tutorialDone') {
+                this._context.globalState.update('tutorialSeen_v1', true);
             } else if (message.command === 'debug') {
                 console.log('[Tinker Webview]', message.text);
             }
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v2.6.0 | Ready';
+        webviewView.description = 'v2.7.0 | Ready';
         console.log('[Tinker] Webview resolved successfully');
+
+        // Show tutorial on first run
+        const tutorialSeen = this._context.globalState.get('tutorialSeen_v1', false);
+        if (!tutorialSeen) {
+            setTimeout(function() {
+                webviewView.webview.postMessage({ type: 'showTutorial' });
+            }, 800);
+        }
     }
 
     // ── Environment detection ────────────────────────────────────
@@ -77,7 +93,6 @@ class TinkerSidebarProvider {
         // WSL: running on Windows, workspace path starts with \\wsl$ or /mnt/
         if (process.platform === 'win32' && rootPath.startsWith('\\\\wsl')) return 'wsl';
         if (process.platform !== 'win32' && rootPath.startsWith('/mnt/')) {
-            // Possibly WSL — check if wsl command exists
             const wslExists = await new Promise(resolve => {
                 const p = spawn('wsl', ['--version'], { env: process.env });
                 p.on('close', c => resolve(c === 0));
@@ -154,49 +169,42 @@ class TinkerSidebarProvider {
     async _ensureReplProc(rootPath, envType, phpPath) {
         if (this._replProc) return true;
 
-        const { cmd, args } = this.buildSpawnArgs('', envType, phpPath, rootPath);
-        // For REPL mode, launch tinker without --execute
-        const replArgs = envType === 'sail' ? ['tinker'] :
-                         envType === 'wsl'  ? [phpPath, 'artisan', 'tinker'] :
-                                              ['artisan', 'tinker'];
-        const replCmd  = envType === 'sail' ? path.join(rootPath, 'vendor', 'bin', 'sail') :
-                         envType === 'wsl'  ? 'wsl' : phpPath;
+        const replArgs = envType === 'sail'
+            ? ['tinker']
+            : envType === 'wsl'
+                ? [phpPath, 'artisan', 'tinker']
+                : ['artisan', 'tinker'];
+        const replCmd = envType === 'sail'
+            ? path.join(rootPath, 'vendor', 'bin', 'sail')
+            : (envType === 'wsl' ? 'wsl' : phpPath);
 
-        try {
+        return new Promise((resolve) => {
             this._replProc = spawn(replCmd, replArgs, {
                 cwd: rootPath,
                 env: process.env,
                 stdio: ['pipe', 'pipe', 'pipe']
             });
-            this._replProc.on('close', () => { this._replProc = null; });
-            this._replProc.on('error', () => { this._replProc = null; });
-            // Brief wait for psysh to initialise
-            await new Promise(r => setTimeout(r, 600));
-            return true;
-        } catch(e) {
-            this._replProc = null;
-            return false;
-        }
+            this._replProc.on('error', () => { this._replProc = null; resolve(false); });
+            setTimeout(() => resolve(!!this._replProc), 600);
+        });
     }
 
     async _executeInRepl(code, webview, rootPath, envType, phpPath) {
-        const ready = await this._ensureReplProc(rootPath, envType, phpPath);
-        if (!ready || !this._replProc) {
-            webview.postMessage({ type: 'error', message: '❌ Could not start REPL process.' });
+        const ok = await this._ensureReplProc(rootPath, envType, phpPath);
+        if (!ok) {
+            webview.postMessage({ type: 'error', message: '❌ Could not start persistent REPL process.' });
             return;
         }
 
-        const marker = 'TINKER_DONE_' + crypto.randomBytes(4).toString('hex');
-        const input  = code + '\necho "' + marker + '";\n';
+        const marker = '___TINKER_DONE_' + Date.now() + '___';
+        const input = code + "\necho '" + marker + "';\n";
+        const timeout = this._getTimeout();
 
         return new Promise((resolve) => {
             let output = '';
-            const timeout = this._getTimeout();
-
             const timer = setTimeout(() => {
                 this._replProc.stdout.off('data', onData);
-                this._killReplProc();
-                webview.postMessage({ type: 'error', message: '❌ REPL timeout (' + (timeout / 1000) + 's). Process killed.' });
+                webview.postMessage({ type: 'error', message: '❌ REPL execution timed out after ' + (timeout / 1000) + 's.' });
                 resolve();
             }, timeout);
 
@@ -207,7 +215,6 @@ class TinkerSidebarProvider {
                     this._replProc.stdout.off('data', onData);
                     const elapsed = Date.now() - this._startTime;
                     let result = output.substring(0, output.indexOf(marker)).trim();
-                    // Strip psysh prompt artifacts
                     result = result.replace(/^>>>\s*/gm, '').trim();
                     webview.postMessage({ type: 'result', output: result || '(ไม่มีผลลัพธ์)', error: false, elapsed, cached: false });
                     vscode.window.showInformationMessage('Tinker REPL: executed in ' + elapsed + 'ms');
@@ -243,7 +250,6 @@ class TinkerSidebarProvider {
             return;
         }
 
-        // Detect environment (cache detection result within a session)
         const [phpPath, envType] = await Promise.all([
             this.detectPhpPath(rootPath),
             this.detectEnv(rootPath)
@@ -251,14 +257,11 @@ class TinkerSidebarProvider {
         this._phpPath = phpPath;
         this._envType = envType;
 
-        // Notify webview of environment
         webview.postMessage({ type: 'envDetected', envType });
 
-        // Check cache (only for isolated mode)
         if (!this._replMode) {
             const cached = this._checkCache(code);
             if (cached) {
-                const elapsed = Date.now() - this._startTime;
                 webview.postMessage({ type: 'result', output: cached.output, error: false, elapsed: 0, cached: true });
                 return;
             }
@@ -339,6 +342,104 @@ class TinkerSidebarProvider {
                     : '❌ Could not start process: ' + err.message;
                 webview.postMessage({ type: 'error', message: msg });
                 vscode.window.showErrorMessage('Tinker: ' + msg.replace(/^❌\s*/, ''));
+                resolve();
+            });
+        });
+    }
+
+    // ── Share via Gist ───────────────────────────────────────────
+
+    async _shareGist(code, output, webview) {
+        webview.postMessage({ type: 'shareStatus', status: 'posting' });
+
+        const body = JSON.stringify({
+            description: 'Artisan Tinker snippet — shared via artisan-tinker-runner',
+            public: false,
+            files: {
+                'tinker.php': { content: code || '// (empty)' },
+                'output.txt': { content: output || '// (no output)' }
+            }
+        });
+
+        return new Promise((resolve) => {
+            const req = https.request({
+                hostname: 'api.github.com',
+                path: '/gists',
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Content-Length': Buffer.byteLength(body),
+                    'User-Agent': 'artisan-tinker-runner-vscode'
+                }
+            }, (res) => {
+                let data = '';
+                res.on('data', d => { data += d; });
+                res.on('end', () => {
+                    try {
+                        const json = JSON.parse(data);
+                        if (json.html_url) {
+                            vscode.env.openExternal(vscode.Uri.parse(json.html_url));
+                            webview.postMessage({ type: 'shareStatus', status: 'done', url: json.html_url });
+                        } else {
+                            webview.postMessage({ type: 'shareStatus', status: 'error', message: 'GitHub API error: ' + (json.message || 'unknown') });
+                        }
+                    } catch(e) {
+                        webview.postMessage({ type: 'shareStatus', status: 'error', message: 'Failed to parse response' });
+                    }
+                    resolve();
+                });
+            });
+            req.on('error', (e) => {
+                webview.postMessage({ type: 'shareStatus', status: 'error', message: e.message });
+                resolve();
+            });
+            req.write(body);
+            req.end();
+        });
+    }
+
+    // ── Test Runner ──────────────────────────────────────────────
+
+    async _runTest(filter, webview) {
+        const workspace = vscode.workspace.workspaceFolders?.[0];
+        if (!workspace) {
+            webview.postMessage({ type: 'testResult', output: '❌ No workspace open.', error: true });
+            return;
+        }
+        const rootPath = workspace.uri.fsPath;
+        if (!fs.existsSync(path.join(rootPath, 'artisan'))) {
+            webview.postMessage({ type: 'testResult', output: '❌ No artisan file found.', error: true });
+            return;
+        }
+
+        const phpPath = await this.detectPhpPath(rootPath);
+        const args = ['artisan', 'test'];
+        if (filter && filter.trim()) { args.push('--filter', filter.trim()); }
+
+        webview.postMessage({ type: 'testResult', output: '⏳ Running tests...', error: false, running: true });
+
+        const timeout = this._getTimeout() * 6; // tests need more time
+
+        return new Promise((resolve) => {
+            const proc = spawn(phpPath, args, { cwd: rootPath, env: process.env });
+            let output = '';
+
+            const timer = setTimeout(() => {
+                proc.kill();
+                webview.postMessage({ type: 'testResult', output: output + '\n❌ Test run timed out.', error: true });
+                resolve();
+            }, timeout);
+
+            proc.stdout.on('data', d => { output += d.toString(); });
+            proc.stderr.on('data', d => { output += d.toString(); });
+            proc.on('close', (code) => {
+                clearTimeout(timer);
+                webview.postMessage({ type: 'testResult', output: output.trim() || '(no output)', error: code !== 0 });
+                resolve();
+            });
+            proc.on('error', (e) => {
+                clearTimeout(timer);
+                webview.postMessage({ type: 'testResult', output: '❌ ' + e.message, error: true });
                 resolve();
             });
         });
@@ -447,9 +548,80 @@ class TinkerSidebarProvider {
         .json-collapsed > ul { display: none; }
         .view-toggle { font-size: 10px; opacity: 0.6; cursor: pointer; margin-left: 6px; }
         .view-toggle:hover { opacity: 1; }
+
+        /* Query Log Table */
+        .query-table { width: 100%; border-collapse: collapse; font-size: 10px; font-family: monospace; }
+        .query-table th { background: var(--btn-secondary); padding: 4px 6px; text-align: left; font-size: 10px; font-weight: 600; position: sticky; top: 0; }
+        .query-table td { padding: 3px 6px; border-top: 1px solid var(--border); vertical-align: top; word-break: break-all; }
+        .query-table tr:hover td { background: rgba(255,255,255,0.04); }
+        .query-sql { color: #9cdcfe; }
+        .query-time { color: #b5cea8; white-space: nowrap; }
+        .query-bindings { color: #ce9178; opacity: 0.8; }
+
+        /* Test Runner panel */
+        .collapsible-panel { border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+        .panel-header {
+            background: var(--btn-secondary); padding: 5px 8px;
+            display: flex; align-items: center; justify-content: space-between;
+            font-size: 11px; cursor: pointer; user-select: none;
+        }
+        .panel-body { padding: 6px; display: none; flex-direction: column; gap: 6px; }
+        .panel-body.open { display: flex; }
+        .test-output {
+            background: var(--vscode-editor-background, #1e1e1e);
+            border: 1px solid var(--border); border-radius: 3px;
+            padding: 6px; font-family: monospace; white-space: pre-wrap;
+            max-height: 160px; overflow-y: auto; font-size: 10px;
+        }
+        .test-pass { color: #89d185; }
+        .test-fail { color: #f48771; }
+
+        /* Analytics panel */
+        .analytics-body { padding: 6px 8px; display: none; flex-wrap: wrap; gap: 8px; }
+        .analytics-body.open { display: flex; }
+        .stat-item { display: flex; flex-direction: column; align-items: center; min-width: 52px; }
+        .stat-num { font-size: 18px; font-weight: 700; color: var(--btn-hover); line-height: 1; }
+        .stat-lbl { font-size: 9px; opacity: 0.6; text-align: center; margin-top: 2px; }
+
+        /* Tutorial overlay */
+        .tutorial-overlay {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.75); z-index: 100;
+            align-items: center; justify-content: center;
+        }
+        .tutorial-overlay.visible { display: flex; }
+        .tutorial-card {
+            background: var(--vscode-editor-background, #1e1e1e);
+            border: 1px solid var(--border); border-radius: 8px;
+            padding: 20px; max-width: 280px; width: 90%;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+        }
+        .tutorial-step-num { font-size: 10px; opacity: 0.5; margin-bottom: 6px; }
+        .tutorial-icon { font-size: 28px; margin-bottom: 8px; }
+        .tutorial-title { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+        .tutorial-desc { font-size: 12px; opacity: 0.8; line-height: 1.5; margin-bottom: 16px; }
+        .tutorial-dots { display: flex; gap: 6px; justify-content: center; margin-bottom: 14px; }
+        .tutorial-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--btn-secondary); }
+        .tutorial-dot.active { background: var(--btn-hover); }
+        .tutorial-actions { display: flex; gap: 8px; justify-content: flex-end; }
     </style>
 </head>
 <body>
+    <!-- Tutorial overlay -->
+    <div class="tutorial-overlay" id="tutorialOverlay">
+        <div class="tutorial-card">
+            <div class="tutorial-step-num" id="tutStepNum">Step 1 of 5</div>
+            <div class="tutorial-icon" id="tutIcon">✍️</div>
+            <div class="tutorial-title" id="tutTitle">Write PHP Code</div>
+            <div class="tutorial-desc" id="tutDesc">Type any PHP expression in the editor and press ▶ Execute (or Ctrl+Enter) to run it via artisan tinker.</div>
+            <div class="tutorial-dots" id="tutDots"></div>
+            <div class="tutorial-actions">
+                <button class="btn-secondary btn-small" id="tutSkip">Skip tour</button>
+                <button class="btn-small" id="tutNext">Next →</button>
+            </div>
+        </div>
+    </div>
+
     <div class="container">
         <div class="row" style="justify-content:space-between;">
             <h3>🪄 Artisan Tinker</h3>
@@ -484,13 +656,17 @@ class TinkerSidebarProvider {
                 <option value="DB::select('SELECT 1');">DB::select('SELECT 1');</option>
                 <option value="Schema::getColumnListing('users');">Schema::getColumnListing('users');</option>
             </optgroup>
+            <optgroup label="Query Log">
+                <option value="DB::enableQueryLog();">DB::enableQueryLog();</option>
+                <option value="DB::enableQueryLog();\nUser::all();\n$q = DB::getQueryLog();\nreturn $q;">🗄️ Capture query log</option>
+            </optgroup>
             <optgroup label="App">
                 <option value="app()->environment();">app()->environment();</option>
                 <option value="config('app.name');">config('app.name');</option>
                 <option value="config('database.default');">config('database.default');</option>
                 <option value="now()->toDateTimeString();">now()->toDateTimeString();</option>
             </optgroup>
-            <optgroup label="Cache & Queue">
+            <optgroup label="Cache &amp; Queue">
                 <option value="Cache::get('key');">Cache::get('key');</option>
                 <option value="Cache::flush();">Cache::flush();</option>
                 <option value="Queue::size();">Queue::size();</option>
@@ -524,38 +700,101 @@ class TinkerSidebarProvider {
         <div class="output-header">
             <span class="output-label">Output <span id="viewToggle" class="view-toggle" style="display:none;">[tree]</span></span>
             <div style="display:flex;gap:4px;">
+                <button id="shareBtn" class="btn-small btn-secondary" title="Share as GitHub Gist" style="display:none;">🌐 Share</button>
                 <button id="copyBtn" class="btn-small btn-secondary" title="Copy output">📋 Copy</button>
                 <button id="clearOutputBtn" class="btn-small btn-secondary" title="Clear output">✕ Clear</button>
             </div>
         </div>
         <div class="output" id="output">// ผลลัพธ์จะแสดงที่นี่...</div>
+
+        <!-- Test Runner panel -->
+        <div class="collapsible-panel">
+            <div class="panel-header" id="testPanelHeader">
+                <span>🧪 Test Runner</span>
+                <span id="testToggleArrow">▸</span>
+            </div>
+            <div class="panel-body" id="testPanelBody">
+                <input type="text" id="testFilter" placeholder="Filter (e.g. UserTest) — empty runs all tests">
+                <button id="runTestBtn">▶ Run Artisan Test</button>
+                <div class="test-output" id="testOutput" style="display:none;"></div>
+            </div>
+        </div>
+
+        <!-- Analytics panel -->
+        <div class="collapsible-panel">
+            <div class="panel-header" id="analyticsHeader">
+                <span>📈 Usage Stats</span>
+                <span id="analyticsArrow">▸</span>
+            </div>
+            <div class="analytics-body" id="analyticsBody">
+                <div class="stat-item"><div class="stat-num" id="statRuns">0</div><div class="stat-lbl">Runs</div></div>
+                <div class="stat-item"><div class="stat-num" id="statCacheHits">0</div><div class="stat-lbl">Cache hits</div></div>
+                <div class="stat-item"><div class="stat-num" id="statReplRuns">0</div><div class="stat-lbl">REPL runs</div></div>
+                <div class="stat-item"><div class="stat-num" id="statShares">0</div><div class="stat-lbl">Shares</div></div>
+                <div class="stat-item"><div class="stat-num" id="statTests">0</div><div class="stat-lbl">Tests run</div></div>
+                <div style="width:100%;margin-top:4px;">
+                    <button id="resetStatsBtn" class="btn-small btn-secondary" style="font-size:10px;opacity:0.6;">Reset stats</button>
+                </div>
+            </div>
+        </div>
     </div>
 
     <script>
-        const vscode = acquireVsCodeApi();
-        const HISTORY_KEY = 'artisan_tinker_history_v2';
-        const MAX_HISTORY = 15;
+        var vscode = acquireVsCodeApi();
+        var HISTORY_KEY = 'artisan_tinker_history_v2';
+        var ANALYTICS_KEY = 'tinker_analytics_v1';
+        var MAX_HISTORY = 15;
 
-        const editor = document.getElementById('editor');
-        const executeBtn = document.getElementById('executeBtn');
-        const stopBtn = document.getElementById('stopBtn');
-        const output = document.getElementById('output');
-        const status = document.getElementById('status');
-        const historySelect = document.getElementById('historySelect');
-        const historySearch = document.getElementById('historySearch');
-        const copyBtn = document.getElementById('copyBtn');
-        const clearOutputBtn = document.getElementById('clearOutputBtn');
-        const pinBtn = document.getElementById('pinBtn');
-        const templateSelect = document.getElementById('templateSelect');
-        const viewToggle = document.getElementById('viewToggle');
-        const replToggle = document.getElementById('replToggle');
-        const resetReplBtn = document.getElementById('resetReplBtn');
-        const envBadge = document.getElementById('envBadge');
-        const cachedBadge = document.getElementById('cachedBadge');
+        var editor = document.getElementById('editor');
+        var executeBtn = document.getElementById('executeBtn');
+        var stopBtn = document.getElementById('stopBtn');
+        var output = document.getElementById('output');
+        var status = document.getElementById('status');
+        var historySelect = document.getElementById('historySelect');
+        var historySearch = document.getElementById('historySearch');
+        var copyBtn = document.getElementById('copyBtn');
+        var shareBtn = document.getElementById('shareBtn');
+        var clearOutputBtn = document.getElementById('clearOutputBtn');
+        var pinBtn = document.getElementById('pinBtn');
+        var templateSelect = document.getElementById('templateSelect');
+        var viewToggle = document.getElementById('viewToggle');
+        var replToggle = document.getElementById('replToggle');
+        var resetReplBtn = document.getElementById('resetReplBtn');
+        var envBadge = document.getElementById('envBadge');
+        var cachedBadge = document.getElementById('cachedBadge');
 
-        let _lastRawOutput = '';
-        let _isTreeView = false;
-        let _selectedHistoryCode = '';
+        var _lastRawOutput = '';
+        var _viewMode = 'text';
+        var _selectedHistoryCode = '';
+
+        // ── Analytics ─────────────────────────────────────────────
+        function getAnalytics() {
+            try { return JSON.parse(localStorage.getItem(ANALYTICS_KEY) || '{}'); } catch(e) { return {}; }
+        }
+        function saveAnalytics(a) { localStorage.setItem(ANALYTICS_KEY, JSON.stringify(a)); }
+        function trackEvent(event) {
+            var a = getAnalytics();
+            a[event] = (a[event] || 0) + 1;
+            saveAnalytics(a);
+        }
+        function renderAnalytics() {
+            var a = getAnalytics();
+            document.getElementById('statRuns').textContent = a.runs || 0;
+            document.getElementById('statCacheHits').textContent = a.cacheHits || 0;
+            document.getElementById('statReplRuns').textContent = a.replRuns || 0;
+            document.getElementById('statShares').textContent = a.shares || 0;
+            document.getElementById('statTests').textContent = a.tests || 0;
+        }
+        document.getElementById('analyticsHeader').addEventListener('click', function() {
+            var body = document.getElementById('analyticsBody');
+            var open = body.classList.toggle('open');
+            document.getElementById('analyticsArrow').textContent = open ? '▾' : '▸';
+            if (open) renderAnalytics();
+        });
+        document.getElementById('resetStatsBtn').addEventListener('click', function() {
+            localStorage.removeItem(ANALYTICS_KEY);
+            renderAnalytics();
+        });
 
         // ── REPL toggle ───────────────────────────────────────────
         replToggle.addEventListener('change', function() {
@@ -572,10 +811,10 @@ class TinkerSidebarProvider {
         // ── Snippet Templates ──────────────────────────────────────
         templateSelect.addEventListener('change', function() {
             if (!this.value) return;
-            const pos = editor.selectionStart;
-            const before = editor.value.substring(0, pos);
-            const after = editor.value.substring(editor.selectionEnd);
-            const sep = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
+            var pos = editor.selectionStart;
+            var before = editor.value.substring(0, pos);
+            var after = editor.value.substring(editor.selectionEnd);
+            var sep = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
             editor.value = before + sep + this.value + '\n' + after;
             editor.focus();
             this.value = '';
@@ -586,20 +825,18 @@ class TinkerSidebarProvider {
             try { return JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]'); }
             catch(e) { return []; }
         }
-
         function saveHistoryRaw(hist) { localStorage.setItem(HISTORY_KEY, JSON.stringify(hist)); }
-
         function loadHistory(filter) {
-            const hist = getHistory();
-            const q = (filter || '').toLowerCase();
+            var hist = getHistory();
+            var q = (filter || '').toLowerCase();
             historySelect.innerHTML = '<option value="">📜 เลือก History...</option>';
-            const pinned = hist.filter(function(h) { return h.pinned; });
-            const unpinned = hist.filter(function(h) { return !h.pinned; });
+            var pinned = hist.filter(function(h) { return h.pinned; });
+            var unpinned = hist.filter(function(h) { return !h.pinned; });
             function addOpt(item) {
                 if (q && !item.code.toLowerCase().includes(q)) return;
-                const opt = document.createElement('option');
+                var opt = document.createElement('option');
                 opt.value = item.code;
-                const short = item.code.length > 33 ? item.code.substring(0, 33) + '...' : item.code;
+                var short = item.code.length > 33 ? item.code.substring(0, 33) + '...' : item.code;
                 opt.textContent = (item.pinned ? '📌 ' : '') + short + ' [' + item.time + ']';
                 if (item.pinned) opt.className = 'pinned';
                 historySelect.appendChild(opt);
@@ -607,37 +844,34 @@ class TinkerSidebarProvider {
             pinned.forEach(addOpt);
             unpinned.forEach(addOpt);
         }
-
         function saveHistory(code) {
             if (!code) return;
-            let hist = getHistory();
-            const existing = hist.find(function(h) { return h.code === code; });
+            var hist = getHistory();
+            var existing = hist.find(function(h) { return h.code === code; });
             hist = hist.filter(function(h) { return h.code !== code; });
-            hist.unshift({ code, time: new Date().toLocaleTimeString(), pinned: existing ? existing.pinned : false });
+            hist.unshift({ code: code, time: new Date().toLocaleTimeString(), pinned: existing ? existing.pinned : false });
             while (hist.length > MAX_HISTORY) {
-                const idx = hist.map(function(h) { return h.pinned; }).lastIndexOf(false);
+                var idx = hist.map(function(h) { return h.pinned; }).lastIndexOf(false);
                 if (idx === -1) break;
                 hist.splice(idx, 1);
             }
             saveHistoryRaw(hist);
             loadHistory(historySearch.value);
         }
-
         function togglePin(code) {
             if (!code) return;
-            let hist = getHistory();
+            var hist = getHistory();
             hist = hist.map(function(h) { return h.code === code ? Object.assign({}, h, { pinned: !h.pinned }) : h; });
             saveHistoryRaw(hist);
             loadHistory(historySearch.value);
         }
-
         historySearch.addEventListener('input', function() { loadHistory(this.value); });
         historySelect.addEventListener('change', function(e) {
             _selectedHistoryCode = e.target.value;
             if (e.target.value) { editor.value = e.target.value; editor.focus(); }
         });
         pinBtn.addEventListener('click', function() {
-            const code = _selectedHistoryCode || editor.value.trim();
+            var code = _selectedHistoryCode || editor.value.trim();
             if (!code) return;
             togglePin(code);
             _selectedHistoryCode = ''; historySelect.value = '';
@@ -647,6 +881,33 @@ class TinkerSidebarProvider {
             localStorage.removeItem(HISTORY_KEY); loadHistory(); historySearch.value = '';
             _selectedHistoryCode = ''; status.textContent = '✅ ล้าง History แล้ว';
         });
+
+        // ── Query Log Detection ────────────────────────────────────
+        function isQueryLog(data) {
+            return Array.isArray(data) && data.length > 0 && typeof data[0] === 'object' && data[0] !== null && 'query' in data[0] && 'time' in data[0];
+        }
+        function renderQueryTable(queries) {
+            var table = document.createElement('table');
+            table.className = 'query-table';
+            var thead = table.createTHead();
+            var hr = thead.insertRow();
+            ['#', 'Query', 'Bindings', 'ms'].forEach(function(h) {
+                var th = document.createElement('th');
+                th.textContent = h;
+                hr.appendChild(th);
+            });
+            var tbody = table.createTBody();
+            queries.forEach(function(q, i) {
+                var tr = tbody.insertRow();
+                tr.insertCell().textContent = i + 1;
+                var tdSql = tr.insertCell(); tdSql.className = 'query-sql'; tdSql.textContent = q.query || '';
+                var tdBind = tr.insertCell(); tdBind.className = 'query-bindings';
+                tdBind.textContent = (q.bindings && q.bindings.length) ? JSON.stringify(q.bindings) : '-';
+                var tdTime = tr.insertCell(); tdTime.className = 'query-time';
+                tdTime.textContent = (q.time !== undefined ? parseFloat(q.time).toFixed(2) : '?') + 'ms';
+            });
+            return table;
+        }
 
         // ── JSON Tree ──────────────────────────────────────────────
         function escHtml(s) {
@@ -659,16 +920,16 @@ class TinkerSidebarProvider {
             if (typeof data === 'string') return '<span class="json-str">"' + escHtml(data) + '"</span>';
             if (Array.isArray(data)) {
                 if (!data.length) return '[]';
-                let h = '<span class="json-toggle" onclick="toggleNode(this)">▼</span>[<ul>';
+                var h = '<span class="json-toggle" onclick="toggleNode(this)">▼</span>[<ul>';
                 data.forEach(function(v, i) { h += '<li>' + buildTree(v) + (i < data.length-1 ? ',' : '') + '</li>'; });
                 return h + '</ul>]';
             }
             if (typeof data === 'object') {
-                const keys = Object.keys(data);
+                var keys = Object.keys(data);
                 if (!keys.length) return '{}';
-                let h = '<span class="json-toggle" onclick="toggleNode(this)">▼</span>{<ul>';
-                keys.forEach(function(k, i) { h += '<li><span class="json-key">"' + escHtml(k) + '"</span>: ' + buildTree(data[k]) + (i < keys.length-1 ? ',' : '') + '</li>'; });
-                return h + '</ul>}';
+                var h2 = '<span class="json-toggle" onclick="toggleNode(this)">▼</span>{<ul>';
+                keys.forEach(function(k, i) { h2 += '<li><span class="json-key">"' + escHtml(k) + '"</span>: ' + buildTree(data[k]) + (i < keys.length-1 ? ',' : '') + '</li>'; });
+                return h2 + '</ul>}';
             }
             return escHtml(String(data));
         }
@@ -676,12 +937,8 @@ class TinkerSidebarProvider {
             el.parentElement.classList.toggle('json-collapsed');
             el.textContent = el.parentElement.classList.contains('json-collapsed') ? '▶' : '▼';
         }
-        function renderTree(str) {
-            try {
-                const d = JSON.parse(str);
-                const div = document.createElement('div');
-                div.className = 'json-tree'; div.innerHTML = buildTree(d); return div;
-            } catch(e) { return null; }
+        function tryParseJson(str) {
+            try { return JSON.parse(str); } catch(e) { return null; }
         }
 
         // ── Pretty-print fallback ──────────────────────────────────
@@ -691,11 +948,11 @@ class TinkerSidebarProvider {
                 try { return JSON.stringify(JSON.parse(str), null, 2); } catch(e) {}
             }
             if (/^(array|object)\s*\(/.test(str)) {
-                let indent = 0;
+                var indent = 0;
                 return str.split('\n').map(function(line) {
-                    const t = line.trim();
+                    var t = line.trim();
                     if (/^[}\)]/.test(t)) indent = Math.max(0, indent-1);
-                    const out = '  '.repeat(indent) + t;
+                    var out = '  '.repeat(indent) + t;
                     if (/[\(\{]$/.test(t)) indent++;
                     return out;
                 }).join('\n');
@@ -703,25 +960,49 @@ class TinkerSidebarProvider {
             return str;
         }
 
-        function showOutput(raw, asTree) {
-            _lastRawOutput = raw; _isTreeView = asTree;
+        function showOutput(raw, mode) {
+            _lastRawOutput = raw;
+            _viewMode = mode || 'text';
             output.textContent = '';
-            if (asTree) {
-                const tree = renderTree(raw);
-                if (tree) { output.appendChild(tree); return; }
+            output.style.whiteSpace = 'pre-wrap';
+
+            if (_viewMode === 'table') {
+                var parsed = tryParseJson(raw);
+                if (parsed && isQueryLog(parsed)) {
+                    output.style.whiteSpace = 'normal';
+                    output.appendChild(renderQueryTable(parsed));
+                    return;
+                }
+                _viewMode = 'text';
+            }
+            if (_viewMode === 'tree') {
+                var parsed2 = tryParseJson(raw);
+                if (parsed2 !== null) {
+                    var div = document.createElement('div');
+                    div.className = 'json-tree';
+                    div.innerHTML = buildTree(parsed2);
+                    output.appendChild(div);
+                    return;
+                }
+                _viewMode = 'text';
             }
             output.textContent = formatText(raw);
         }
 
         viewToggle.addEventListener('click', function() {
-            _isTreeView = !_isTreeView;
-            this.textContent = _isTreeView ? '[raw]' : '[tree]';
-            showOutput(_lastRawOutput, _isTreeView);
+            if (_viewMode !== 'text') {
+                _viewMode = 'text'; this.textContent = '[tree]';
+            } else {
+                var parsed = tryParseJson(_lastRawOutput);
+                if (parsed && isQueryLog(parsed)) { _viewMode = 'table'; this.textContent = '[raw]'; }
+                else { _viewMode = 'tree'; this.textContent = '[raw]'; }
+            }
+            showOutput(_lastRawOutput, _viewMode);
         });
 
         // ── Output actions ─────────────────────────────────────────
         copyBtn.addEventListener('click', function() {
-            const text = _lastRawOutput || output.textContent;
+            var text = _lastRawOutput || output.textContent;
             if (!text) return;
             try {
                 navigator.clipboard.writeText(text).then(function() {
@@ -729,17 +1010,43 @@ class TinkerSidebarProvider {
                     setTimeout(function() { copyBtn.textContent = '📋 Copy'; }, 1500);
                 });
             } catch(e) {
-                const ta = document.createElement('textarea');
+                var ta = document.createElement('textarea');
                 ta.value = text; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta);
                 copyBtn.textContent = '✅ Copied';
                 setTimeout(function() { copyBtn.textContent = '📋 Copy'; }, 1500);
             }
         });
 
+        shareBtn.addEventListener('click', function() {
+            var code = editor.value.trim();
+            var out = _lastRawOutput;
+            if (!code && !out) { status.textContent = '⚠️ Nothing to share'; return; }
+            vscode.postMessage({ command: 'shareGist', code: code, output: out });
+            trackEvent('shares');
+        });
+
         clearOutputBtn.addEventListener('click', function() {
-            output.textContent = ''; _lastRawOutput = '';
+            output.textContent = ''; _lastRawOutput = ''; _viewMode = 'text';
             viewToggle.style.display = 'none'; cachedBadge.style.display = 'none';
+            shareBtn.style.display = 'none';
             status.textContent = 'พร้อมใช้งาน'; status.className = 'status';
+        });
+
+        // ── Test Runner panel ──────────────────────────────────────
+        document.getElementById('testPanelHeader').addEventListener('click', function() {
+            var body = document.getElementById('testPanelBody');
+            var open = body.classList.toggle('open');
+            document.getElementById('testToggleArrow').textContent = open ? '▾' : '▸';
+        });
+
+        document.getElementById('runTestBtn').addEventListener('click', function() {
+            var filter = document.getElementById('testFilter').value;
+            vscode.postMessage({ command: 'runTest', filter: filter });
+            trackEvent('tests');
+            var testOut = document.getElementById('testOutput');
+            testOut.style.display = 'block';
+            testOut.textContent = '⏳ Running...';
+            testOut.className = 'test-output';
         });
 
         // ── Execute ────────────────────────────────────────────────
@@ -749,15 +1056,16 @@ class TinkerSidebarProvider {
         }
 
         executeBtn.addEventListener('click', function() {
-            const code = editor.value.trim();
+            var code = editor.value.trim();
             if (!code) { status.textContent = '⚠️ กรุณาใส่โค้ดก่อน'; return; }
             setRunning(true);
             cachedBadge.style.display = 'none';
+            shareBtn.style.display = 'none';
             viewToggle.style.display = 'none';
             status.className = 'status';
             status.textContent = '⏳ กำลังประมวลผล...';
             output.textContent = 'รอผลลัพธ์...';
-            vscode.postMessage({ command: 'execute', code });
+            vscode.postMessage({ command: 'execute', code: code });
         });
 
         stopBtn.addEventListener('click', function() { vscode.postMessage({ command: 'stopProcess' }); });
@@ -771,35 +1079,118 @@ class TinkerSidebarProvider {
 
         // ── Messages from host ─────────────────────────────────────
         window.addEventListener('message', function(event) {
-            const msg = event.data;
+            var msg = event.data;
+
             if (msg.type === 'result') {
-                const raw = msg.output || '(ไม่มีผลลัพธ์)';
-                const isJson = raw.trim().startsWith('{') || raw.trim().startsWith('[');
-                showOutput(raw, isJson);
-                if (isJson) { viewToggle.style.display = 'inline'; viewToggle.textContent = '[raw]'; }
+                var raw = msg.output || '(ไม่มีผลลัพธ์)';
+                var parsed = tryParseJson(raw);
+                var mode = 'text';
+                if (parsed !== null) {
+                    if (isQueryLog(parsed)) { mode = 'table'; viewToggle.textContent = '[raw]'; }
+                    else { mode = 'tree'; viewToggle.textContent = '[raw]'; }
+                    viewToggle.style.display = 'inline';
+                }
+                showOutput(raw, mode);
+                shareBtn.style.display = 'inline-block';
                 cachedBadge.style.display = msg.cached ? 'inline' : 'none';
                 status.className = msg.error ? 'status error' : 'status success';
-                const timeLabel = msg.cached ? ' (cached)' : (msg.elapsed ? ' (' + msg.elapsed + 'ms)' : '');
+                var timeLabel = msg.cached ? ' (cached)' : (msg.elapsed ? ' (' + msg.elapsed + 'ms)' : '');
                 status.textContent = (msg.error ? '❌ เกิดข้อผิดพลาด' : '✅ สำเร็จ') + timeLabel;
                 if (!msg.error) saveHistory(editor.value.trim());
                 setRunning(false);
+                if (msg.cached) trackEvent('cacheHits');
+                else if (replToggle.checked) trackEvent('replRuns');
+                else trackEvent('runs');
+
             } else if (msg.type === 'error') {
                 output.textContent = msg.message; _lastRawOutput = msg.message;
-                viewToggle.style.display = 'none'; cachedBadge.style.display = 'none';
+                viewToggle.style.display = 'none'; cachedBadge.style.display = 'none'; shareBtn.style.display = 'none';
                 status.className = 'status error'; status.textContent = '❌ ล้มเหลว';
                 setRunning(false);
+
             } else if (msg.type === 'stopped') {
                 output.textContent = '⬛ หยุดการทำงานแล้ว'; _lastRawOutput = '';
-                viewToggle.style.display = 'none'; cachedBadge.style.display = 'none';
+                viewToggle.style.display = 'none'; cachedBadge.style.display = 'none'; shareBtn.style.display = 'none';
                 status.className = 'status'; status.textContent = 'หยุดแล้ว';
                 setRunning(false);
+
             } else if (msg.type === 'envDetected') {
                 envBadge.textContent = msg.envType;
                 envBadge.className = 'badge ' + msg.envType;
+
             } else if (msg.type === 'replReset') {
                 status.textContent = '↺ REPL reset — variables cleared';
+
+            } else if (msg.type === 'shareStatus') {
+                if (msg.status === 'posting') {
+                    shareBtn.textContent = '⏳ Sharing...'; shareBtn.disabled = true;
+                } else if (msg.status === 'done') {
+                    shareBtn.textContent = '✅ Shared'; shareBtn.disabled = false;
+                    setTimeout(function() { shareBtn.textContent = '🌐 Share'; }, 2500);
+                    status.textContent = '🌐 Gist opened in browser';
+                } else {
+                    shareBtn.textContent = '❌ Failed'; shareBtn.disabled = false;
+                    setTimeout(function() { shareBtn.textContent = '🌐 Share'; }, 2500);
+                    status.textContent = '❌ Share failed: ' + (msg.message || '');
+                }
+
+            } else if (msg.type === 'testResult') {
+                var testOut = document.getElementById('testOutput');
+                testOut.style.display = 'block';
+                testOut.textContent = msg.output || '(no output)';
+                testOut.className = 'test-output ' + (msg.error ? 'test-fail' : 'test-pass');
+
+            } else if (msg.type === 'showTutorial') {
+                startTutorial();
             }
         });
+
+        // ── Interactive Tutorial ───────────────────────────────────
+        var TUTORIAL_STEPS = [
+            { icon: '✍️', title: 'Write PHP Code', desc: 'Type any PHP expression in the editor. Press ▶ Execute or Ctrl+Enter to run it via artisan tinker.' },
+            { icon: '🧩', title: 'Use Templates', desc: 'Pick a snippet from the template dropdown to insert common Laravel code instantly. Includes a Query Log capture template.' },
+            { icon: '📜', title: 'History & Pins', desc: 'Every successful run is saved in History. Search, select, and 📌 pin your most-used snippets so they never get evicted.' },
+            { icon: '🔄', title: 'Persistent REPL', desc: 'Toggle "Persistent REPL" to keep a single tinker process alive between runs — variables persist across executions.' },
+            { icon: '🌐', title: 'Share & Test Runner', desc: 'After a run, click 🌐 Share to post your snippet as a GitHub Gist. Use 🧪 Test Runner panel to run php artisan test directly.' }
+        ];
+        var _tutStep = 0;
+
+        function startTutorial() {
+            _tutStep = 0;
+            renderTutStep();
+            document.getElementById('tutorialOverlay').classList.add('visible');
+        }
+
+        function renderTutStep() {
+            var step = TUTORIAL_STEPS[_tutStep];
+            document.getElementById('tutStepNum').textContent = 'Step ' + (_tutStep + 1) + ' of ' + TUTORIAL_STEPS.length;
+            document.getElementById('tutIcon').textContent = step.icon;
+            document.getElementById('tutTitle').textContent = step.title;
+            document.getElementById('tutDesc').textContent = step.desc;
+            document.getElementById('tutNext').textContent = _tutStep < TUTORIAL_STEPS.length - 1 ? 'Next →' : '✓ Done';
+            var dots = document.getElementById('tutDots');
+            dots.innerHTML = '';
+            TUTORIAL_STEPS.forEach(function(_, i) {
+                var d = document.createElement('div');
+                d.className = 'tutorial-dot' + (i === _tutStep ? ' active' : '');
+                dots.appendChild(d);
+            });
+        }
+
+        document.getElementById('tutNext').addEventListener('click', function() {
+            if (_tutStep < TUTORIAL_STEPS.length - 1) {
+                _tutStep++;
+                renderTutStep();
+            } else {
+                closeTutorial();
+            }
+        });
+        document.getElementById('tutSkip').addEventListener('click', closeTutorial);
+
+        function closeTutorial() {
+            document.getElementById('tutorialOverlay').classList.remove('visible');
+            vscode.postMessage({ command: 'tutorialDone' });
+        }
 
         // ── Init ───────────────────────────────────────────────────
         window.onerror = function(msg, src, line) {
@@ -814,12 +1205,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v2.6.0...');
-    const provider = new TinkerSidebarProvider(context.extensionUri);
+    console.log('[Artisan Tinker] Activating v2.7.0...');
+    const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v2.6.0 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v2.7.0 พร้อมใช้งาน');
 }
 
 function deactivate() {

@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.7.0] - 2026-06-02
+
+### Added — Phase 4: Advanced & Collaboration
+
+- **🗄️ Query Log Viewer** — Output automatically detected as a query log (`DB::getQueryLog()` result) and rendered as an interactive table showing #, SQL, bindings, and execution time. New "🗄️ Capture query log" template inserted for quick use.
+- **🌐 Share via Gist** — "🌐 Share" button appears after every successful run. Posts code + output as a secret GitHub Gist (anonymous, no token required) and opens it in the browser.
+- **🧪 Test Runner** — Collapsible 🧪 Test Runner panel runs `php artisan test` directly from the sidebar. Supports an optional `--filter` to target specific test classes or methods.
+- **📈 Usage Analytics** — Local-only 📈 Usage Stats panel (no telemetry, never leaves your machine) tracks total runs, cache hits, REPL runs, Gist shares, and test executions. Stored in webview `localStorage`.
+- **🎓 Interactive Tutorial** — 5-step guided walkthrough shown automatically on first install. Covers code editing, templates, history/pins, REPL mode, and sharing. Skippable. Never shown again after completion.
+
 All notable changes to **Artisan Tinker Runner** are documented here.
 
 ---
