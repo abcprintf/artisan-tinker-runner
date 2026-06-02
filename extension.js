@@ -14,10 +14,8 @@ class TinkerSidebarProvider {
             localResourceRoots: [this.extensionUri]
         };
 
-        // ตั้งค่า HTML ทันที
         webviewView.webview.html = this.getHtmlForWebview();
 
-        // รับข้อความจาก Webview
         webviewView.webview.onDidReceiveMessage(async (message) => {
             if (message.command === 'execute') {
                 await this.runTinkerCode(message.code, webviewView.webview);
@@ -26,14 +24,15 @@ class TinkerSidebarProvider {
             }
         });
 
-        // Debug: แจ้งสถานะ
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v2.2.2 | Ready';
+        webviewView.description = 'v2.3.0 | Ready';
         console.log('[Tinker] Webview resolved successfully');
     }
 
     getHtmlForWebview() {
-        return `<!DOCTYPE html>
+        // ใช้ String.raw เพื่อป้องกันปัญหา Template Literal ซ้อน
+        // ใช้ ${VAR} เป็นข้อความธรรมดา แล้วค่อยใช้ .replace() แทนค่า
+        return String.raw`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -119,10 +118,11 @@ class TinkerSidebarProvider {
                 try {
                     const hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
                     historySelect.innerHTML = '<option value="">📜 เลือก History...</option>';
-                    hist.forEach(item => {
+                    hist.forEach(function(item) {
                         const opt = document.createElement('option');
                         opt.value = item.code;
                         const short = item.code.length > 35 ? item.code.substring(0, 35) + '...' : item.code;
+                        // ใช้ string concatenation แทน template literal
                         opt.textContent = short + ' [' + item.time + ']';
                         historySelect.appendChild(opt);
                     });
@@ -134,8 +134,8 @@ class TinkerSidebarProvider {
                 if (!code) return;
                 try {
                     let hist = JSON.parse(localStorage.getItem(HISTORY_KEY) || '[]');
-                    hist = hist.filter(h => h.code !== code);
-                    hist.unshift({ code, time: new Date().toLocaleTimeString() });
+                    hist = hist.filter(function(h) { return h.code !== code; });
+                    hist.unshift({ code: code, time: new Date().toLocaleTimeString() });
                     if (hist.length > MAX_HISTORY) hist.pop();
                     localStorage.setItem(HISTORY_KEY, JSON.stringify(hist));
                     loadHistory();
@@ -163,7 +163,7 @@ class TinkerSidebarProvider {
                 status.className = 'status';
                 status.textContent = '⏳ กำลังประมวลผล...';
                 output.textContent = 'รอผลลัพธ์...';
-                vscode.postMessage({ command: 'execute', code });
+                vscode.postMessage({ command: 'execute', code: code });
             });
 
             document.addEventListener('keydown', function(e) {
@@ -198,7 +198,9 @@ class TinkerSidebarProvider {
         }
     </script>
 </body>
-</html>`;
+</html>`
+        // แทนที่ค่าด้วย .replace() (ถ้ามีตัวแปรจาก Node.js ต้องการส่งเข้า Webview)
+        .replace(/\${VS_CODE_ENV}/g, process.env.NODE_ENV || 'production');
     }
 
     async runTinkerCode(code, webview) {
@@ -217,27 +219,34 @@ class TinkerSidebarProvider {
         console.log('[Tinker] Executing:', code);
 
         return new Promise((resolve) => {
+            // ✅ ไม่ใช้ shell: true เพื่อป้องกันปัญหาการตีความสัญลักษณ์พิเศษของ Shell
             const proc = spawn('php', ['artisan', 'tinker', '--execute', code], {
-                cwd: rootPath, shell: true, env: process.env
+                cwd: rootPath,
+                env: process.env
             });
 
-            let stdout = '', stderr = '';
-            proc.stdout.on('data', d => stdout += d.toString());
-            proc.stderr.on('data', d => stderr += d.toString());
+            let stdout = '';
+            let stderr = '';
+            proc.stdout.on('data', function(d) { stdout += d.toString(); });
+            proc.stderr.on('data', function(d) { stderr += d.toString(); });
 
-            proc.on('close', exitCode => {
-                console.log(`[Tinker] Exit code: ${exitCode}`);
+            proc.on('close', function(exitCode) {
+                console.log('[Tinker] Exit code:', exitCode);
                 if (stderr && !stdout) {
                     webview.postMessage({ type: 'error', message: stderr.trim() });
                 } else {
-                    webview.postMessage({ type: 'result', output: stdout.trim() || '(ไม่มีผลลัพธ์)', error: exitCode !== 0 });
+                    webview.postMessage({ 
+                        type: 'result', 
+                        output: stdout.trim() || '(ไม่มีผลลัพธ์)', 
+                        error: exitCode !== 0 
+                    });
                 }
                 resolve();
             });
 
-            proc.on('error', err => {
+            proc.on('error', function(err) {
                 console.error('[Tinker] Spawn error:', err);
-                webview.postMessage({ type: 'error', message: `❌ เริ่มกระบวนการไม่สำเร็จ: ${err.message}` });
+                webview.postMessage({ type: 'error', message: '❌ เริ่มกระบวนการไม่สำเร็จ: ' + err.message });
                 resolve();
             });
         });
@@ -245,12 +254,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v2.2.2...');
+    console.log('[Artisan Tinker] Activating v2.3.0...');
     const provider = new TinkerSidebarProvider(context.extensionUri);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v2.2.2 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v2.3.0 พร้อมใช้งาน');
 }
 
 function deactivate() {

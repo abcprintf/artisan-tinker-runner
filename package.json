@@ -2,7 +2,7 @@
   "name": "artisan-tinker-runner",
   "displayName": "Artisan Tinker Runner",
   "description": "Sidebar panel with Monaco Editor, Syntax Highlighting & Execution History",
-  "version": "2.2.2",
+  "version": "2.2.4",
   "publisher": "abcprintf",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/abcprintf/artisan-tinker-runner.git" },
