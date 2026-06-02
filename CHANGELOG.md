@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.9.0] - 2026-06-03
+
+### Changed
+
+- **Housekeeping** — Added `.vscodeignore` to slim down VSIX package (excludes `plan/`, `src/`, `screens/`, dev docs). Removed `CLAUDE.md` from version control.
+
+---
+
 ## [2.8.0] - 2026-06-03
 
 ### Fixed & Improved
