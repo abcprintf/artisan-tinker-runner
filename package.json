@@ -1,11 +1,19 @@
 {
   "name": "artisan-tinker-runner",
   "displayName": "Artisan Tinker Runner",
-  "description": "Sidebar panel with Monaco Editor, Syntax Highlighting & Execution History",
-  "version": "2.2.4",
-  "publisher": "abcprintf",
+  "description": "Laravel Artisan Tinker sidebar with Query Log Viewer, Gist sharing, Test Runner, Analytics & Interactive Tutorial",
+  "version": "2.8.0",
+  "publisher": "workitdee",
+  "author": {
+    "name": "abcprintf",
+    "url": "https://workitdee.com"
+  },
+  "homepage": "https://workitdee.com",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/abcprintf/artisan-tinker-runner.git" },
+  "bugs": { "url": "https://github.com/abcprintf/artisan-tinker-runner/issues" },
+  "keywords": ["laravel", "tinker", "php", "artisan", "repl", "sidebar"],
+  "icon": "icon.png",
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
   "activationEvents": ["workspaceContains:artisan"],
@@ -16,7 +24,7 @@
         {
           "id": "artisan-tinker-sidebar",
           "title": "Artisan Tinker",
-          "icon": "$(terminal)"
+          "icon": "icon.svg"
         }
       ]
     },
@@ -36,5 +44,30 @@
       }
     ]
   },
-  "scripts": { "vscode:prepublish": "" }
+  "scripts": { "vscode:prepublish": "" },
+  "configuration": {
+    "title": "Artisan Tinker Runner",
+    "properties": {
+      "artisan-tinker-runner.phpPath": {
+        "type": "string",
+        "default": "",
+        "description": "Custom PHP executable path. Leave empty to auto-detect from PATH."
+      },
+      "artisan-tinker-runner.timeout": {
+        "type": "number",
+        "default": 30,
+        "description": "Execution timeout in seconds before the process is killed."
+      },
+      "artisan-tinker-runner.cacheEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Cache execution results for identical code within the TTL window."
+      },
+      "artisan-tinker-runner.cacheTtl": {
+        "type": "number",
+        "default": 30,
+        "description": "Cache time-to-live in seconds."
+      }
+    }
+  }
 }

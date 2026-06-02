@@ -1,0 +1,12 @@
+plan/
+src/
+screens/
+.vscode/
+node_modules/
+*.vsix
+DEVELOPMENT.md
+CHANGELOG.md
+CLAUDE.md
+.eslintrc*
+.gitignore
+package-lock.json
