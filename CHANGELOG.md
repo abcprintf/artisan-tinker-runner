@@ -1,5 +1,16 @@
 # Changelog
 
+## [2.8.0] - 2026-06-03
+
+### Fixed & Improved
+
+- **Activity bar icon** — Fixed icon not displaying by switching from unsupported `$(terminal)` codicon to `icon.svg` path
+- **Publisher** — Changed publisher ID from `abcprintf` to `workitdee`
+- **README** — Cleaned up for Marketplace: screenshot now uses relative path (bundled in `.vsix`), removed private repo clone instructions
+- **DEVELOPMENT.md** — New developer setup guide with architecture notes, debugging tips, and publish instructions
+
+---
+
 ## [2.7.0] - 2026-06-02
 
 ### Added — Phase 4: Advanced & Collaboration
