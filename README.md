@@ -19,6 +19,12 @@
 | 🛡️ **Friendly Error Messages** | Human-readable errors for PHP not found, missing artisan, and crashes |
 | ⌨️ **Keyboard Shortcut** | `Ctrl+Enter` / `Cmd+Enter` to execute instantly |
 | 🌓 **Auto Theme Sync** | UI adapts automatically to any VS Code / Cursor theme |
+| 🌐 **PHP Path Auto-Detect** | Detects `php` from PATH automatically; override in settings |
+| ⏰ **Timeout Guard** | Kills runaway processes after a configurable timeout (default 30s) |
+| ⚡ **Execution Cache** | Caches results for identical code within a TTL window (default 30s) |
+| 🐳 **Sail / Docker Auto-Detect** | Detects `vendor/bin/sail` and switches to `sail tinker` automatically |
+| 🪟 **WSL Support** | Routes execution via `wsl` for WSL workspace paths |
+| 🔄 **Persistent REPL** | Optional toggle to keep a single Tinker process alive between runs |
 | 📦 **Zero Config** | Just open a Laravel project and start tinkering |
 | 🔐 **Safe Execution** | `shell: false` prevents shell injection; each run is isolated |
 
@@ -78,11 +84,26 @@ App\Models\Order::with('user')->where('status', 'pending')->get();
 
 ---
 
+## ⚙️ Settings
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `artisan-tinker-runner.phpPath` | `""` | Custom PHP executable path. Empty = auto-detect from PATH |
+| `artisan-tinker-runner.timeout` | `30` | Execution timeout in seconds before the process is killed |
+| `artisan-tinker-runner.cacheEnabled` | `true` | Cache results for identical code within the TTL window |
+| `artisan-tinker-runner.cacheTtl` | `30` | Cache time-to-live in seconds |
+
+---
+
 ## ⚙️ How It Works
 
-- **Execution**: `child_process.spawn('php', ['artisan', 'tinker', '--execute', code])` — `shell: false` prevents special-character injection
+- **Execution**: `child_process.spawn(phpPath, ['artisan', 'tinker', '--execute', code])` — `shell: false` prevents special-character injection
+- **Environment Detection**: Checks for `vendor/bin/sail` + `docker-compose.yml` (Sail) or WSL paths, then selects the correct command automatically
 - **Stop Process**: Sends `SIGTERM` to the child process; a `_stopping` guard prevents duplicate result messages
-- **Pretty-Print**: JSON is formatted with `JSON.stringify(parsed, null, 2)`; `var_dump`/`print_r` output is re-indented by bracket depth
+- **Timeout Guard**: `setTimeout` kills the process after the configured timeout; cleared on normal exit
+- **Execution Cache**: MD5 hash of code → in-memory `Map` with TTL; cache is per-session (cleared on reload)
+- **Persistent REPL**: Keeps one `php artisan tinker` process alive; sends code via `stdin` with a unique end-marker; `Reset` tears down the process
+- **Pretty-Print**: JSON formatted with `JSON.stringify(parsed, null, 2)`; `var_dump`/`print_r` re-indented by bracket depth
 - **History**: Stored in Webview `localStorage` — persists across sessions, scoped to the extension
 - **Themes**: All colors use `var(--vscode-*)` CSS variables — zero extra configuration needed
 

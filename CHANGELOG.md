@@ -4,6 +4,23 @@ All notable changes to **Artisan Tinker Runner** are documented here.
 
 ---
 
+## [2.6.0] — 2026-06-02
+
+### Added
+- **PHP Path Auto-Detect** — Runs `which`/`where php` at startup; override with `artisan-tinker-runner.phpPath` in VS Code settings
+- **Timeout Guard** — Kills the process after a configurable timeout (default 30s); configure via `artisan-tinker-runner.timeout`
+- **Execution Cache** — MD5-keyed in-memory cache with configurable TTL (default 30s); shows `cached` badge in UI; disable via `artisan-tinker-runner.cacheEnabled`
+- **Laravel Sail / Docker Detection** — Auto-detects `vendor/bin/sail` + `docker-compose.yml` and switches to `sail tinker` automatically
+- **WSL Support** — Detects WSL workspace paths (`\\wsl$`, `/mnt/`) and routes execution via `wsl` command
+- **Persistent REPL** — Toggle switch keeps a single `php artisan tinker` process alive between runs; code sent via stdin with a unique marker; Reset button clears the session
+- **Environment badge** — Small badge in UI shows current detected environment: `local` / `sail` / `wsl`
+- **Settings** — Four new VS Code settings: `phpPath`, `timeout`, `cacheEnabled`, `cacheTtl`
+
+### Changed
+- Version bump `2.5.0` → `2.6.0`
+
+---
+
 ## [2.5.0] — 2026-06-02
 
 ### Added
