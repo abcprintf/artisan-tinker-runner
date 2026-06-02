@@ -22,3 +22,6 @@ Thumbs.db
 
 # Editor (local only)
 .vscode/
+
+# Claude Code internal instructions
+CLAUDE.md
