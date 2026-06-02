@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" 
+      content="default-src 'none'; script-src 'nonce-{{NONCE}}'; style-src 'unsafe-inline';">
+    <title>Artisan Tinker</title>
+    <style>
+        body { font-family: var(--vscode-font-family); padding: 1rem; color: var(--vscode-foreground); }
+        .container { display: flex; flex-direction: column; gap: 1rem; }
+        textarea { 
+            width: 100%; min-height: 120px; 
+            background: var(--vscode-input-background); 
+            color: var(--vscode-input-foreground);
+            border: 1px solid var(--vscode-input-border); 
+            border-radius: 4px; padding: 0.5rem; font-family: monospace;
+        }
+        button { 
+            background: var(--vscode-button-background); 
+            color: var(--vscode-button-foreground);
+            border: none; padding: 0.5rem 1rem; border-radius: 4px; cursor: pointer;
+        }
+        button:hover { background: var(--vscode-button-hoverBackground); }
+        button:disabled { opacity: 0.6; cursor: not-allowed; }
+        .output { 
+            background: var(--vscode-editor-background); 
+            border: 1px solid var(--vscode-editorGroup-border);
+            border-radius: 4px; padding: 0.5rem; 
+            font-family: monospace; white-space: pre-wrap; max-height: 400px; overflow-y: auto;
+        }
+        .status { font-size: 0.9em; color: var(--vscode-descriptionForeground); }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h3>🪄 Artisan Tinker</h3>
+        <textarea id="codeInput" placeholder="Enter PHP code to execute...\nExample: User::find(1)->name;"></textarea>
+        <div style="display:flex;gap:0.5rem;align-items:center">
+            <button id="executeBtn">▶ Execute</button>
+            <span class="status" id="status">Ready</span>
+        </div>
+        <div class="output" id="output">// Output will appear here...</div>
+    </div>
+    <script src="{{CSP_SOURCE}}"></script>
+</body>
+</html>

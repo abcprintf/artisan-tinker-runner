@@ -1,0 +1,40 @@
+{
+  "name": "artisan-tinker-runner",
+  "displayName": "Artisan Tinker Runner",
+  "description": "Sidebar panel to execute PHP code in Artisan Tinker",
+  "version": "2.1.0",
+  "publisher": "yourname",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/yourname/artisan-tinker-runner.git" },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Other"],
+  "activationEvents": ["workspaceContains:artisan"],
+  "main": "./extension.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "artisan-tinker-sidebar",
+          "title": "Artisan Tinker",
+          "icon": "$(terminal)"
+        }
+      ]
+    },
+    "views": {
+      "artisan-tinker-sidebar": [
+        {
+          "type": "webview",
+          "id": "artisanTinkerView",
+          "name": "Tinker Console"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "artisan-tinker-runner.openPanel",
+        "title": "Open Artisan Tinker Panel"
+      }
+    ]
+  },
+  "scripts": { "vscode:prepublish": "" }
+}
