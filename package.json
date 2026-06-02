@@ -4,8 +4,15 @@
   "description": "Sidebar panel with Monaco Editor, Syntax Highlighting & Execution History",
   "version": "2.6.0",
   "publisher": "abcprintf",
+  "author": {
+    "name": "abcprintf",
+    "url": "https://workitdee.com"
+  },
+  "homepage": "https://workitdee.com",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/abcprintf/artisan-tinker-runner.git" },
+  "bugs": { "url": "https://github.com/abcprintf/artisan-tinker-runner/issues" },
+  "keywords": ["laravel", "tinker", "php", "artisan", "repl", "sidebar"],
   "engines": { "vscode": "^1.85.0" },
   "categories": ["Other"],
   "activationEvents": ["workspaceContains:artisan"],

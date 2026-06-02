@@ -2,6 +2,8 @@
 
 > A lightweight VS Code / Cursor extension to execute PHP code directly in **Artisan Tinker** from a dedicated sidebar panel — no terminal, no file switching, no setup.
 
+**Developed by [abcprintf](https://github.com/abcprintf) · [workitdee.com](https://workitdee.com)**
+
 ---
 
 ## ✨ Features
@@ -163,3 +165,5 @@ npx vsce package               # build .vsix
 
 - 🐛 **Bugs**: [GitHub Issues](https://github.com/abcprintf/artisan-tinker-runner/issues)
 - 💡 **Feature Requests**: [GitHub Discussions](https://github.com/abcprintf/artisan-tinker-runner/discussions)
+- 🌐 **Website**: [workitdee.com](https://workitdee.com)
+- 👤 **Author**: [abcprintf](https://github.com/abcprintf)
