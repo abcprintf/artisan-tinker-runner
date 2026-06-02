@@ -4,6 +4,20 @@ All notable changes to **Artisan Tinker Runner** are documented here.
 
 ---
 
+## [2.5.0] — 2026-06-02
+
+### Added
+- **Pin Favorite Snippets** — Pin/unpin history items via the 📌 button; pinned snippets always appear at the top of the dropdown in gold color
+- **Snippet Templates** — 14 ready-to-use Laravel snippets in a dropdown, grouped into Models, Database, App, Cache/Queue, and Auth; click to insert at cursor position
+- **Result Tree Viewer** — JSON output is automatically rendered as a collapsible tree; toggle between tree and raw view with `[raw]` / `[tree]`
+- **Multi-Line Support** — Code is written to a temporary `.tinker_tmp.php` file before execution, ensuring multi-line PHP works reliably; temp file is cleaned up after each run
+
+### Changed
+- History items now carry a `pinned` boolean field; pinned items are preserved when the 15-item limit is reached (unpinned items are trimmed first)
+- Version bump `2.4.0` → `2.5.0`
+
+---
+
 ## [2.4.0] — 2026-06-02
 
 ### Added
