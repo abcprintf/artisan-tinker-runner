@@ -2,7 +2,7 @@
   "name": "artisan-tinker-runner",
   "displayName": "Artisan Tinker Runner",
   "description": "Sidebar panel with Monaco Editor, Syntax Highlighting & Execution History",
-  "version": "2.5.0",
+  "version": "2.6.0",
   "publisher": "abcprintf",
   "license": "MIT",
   "repository": { "type": "git", "url": "https://github.com/abcprintf/artisan-tinker-runner.git" },
@@ -36,5 +36,30 @@
       }
     ]
   },
-  "scripts": { "vscode:prepublish": "" }
+  "scripts": { "vscode:prepublish": "" },
+  "configuration": {
+    "title": "Artisan Tinker Runner",
+    "properties": {
+      "artisan-tinker-runner.phpPath": {
+        "type": "string",
+        "default": "",
+        "description": "Custom PHP executable path. Leave empty to auto-detect from PATH."
+      },
+      "artisan-tinker-runner.timeout": {
+        "type": "number",
+        "default": 30,
+        "description": "Execution timeout in seconds before the process is killed."
+      },
+      "artisan-tinker-runner.cacheEnabled": {
+        "type": "boolean",
+        "default": true,
+        "description": "Cache execution results for identical code within the TTL window."
+      },
+      "artisan-tinker-runner.cacheTtl": {
+        "type": "number",
+        "default": 30,
+        "description": "Cache time-to-live in seconds."
+      }
+    }
+  }
 }
