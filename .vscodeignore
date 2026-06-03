@@ -10,3 +10,4 @@ CLAUDE.md
 .eslintrc*
 .gitignore
 package-lock.json
+.claude/

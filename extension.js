@@ -17,6 +17,7 @@ class TinkerSidebarProvider {
         this._cache = new Map();       // hash -> { output, timestamp }
         this._phpPath = 'php';
         this._envType = 'local';       // 'local' | 'sail' | 'wsl'
+        this._envOverride = null;      // manual override from webview
         this._replMode = false;
     }
 
@@ -37,6 +38,10 @@ class TinkerSidebarProvider {
                 this._replMode = message.enabled;
                 if (!this._replMode) { this._killReplProc(); }
                 console.log('[Tinker] REPL mode:', this._replMode);
+            } else if (message.command === 'setEnvType') {
+                this._envOverride = message.envType;
+                this._envType = message.envType;
+                this._killReplProc(); // restart REPL with new env
             } else if (message.command === 'resetRepl') {
                 this._killReplProc();
                 webviewView.webview.postMessage({ type: 'replReset' });
@@ -48,12 +53,51 @@ class TinkerSidebarProvider {
                 this._context.globalState.update('tutorialSeen_v1', true);
             } else if (message.command === 'debug') {
                 console.log('[Tinker Webview]', message.text);
+            } else if (message.command === 'loadTemplates') {
+                const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                const templates = root ? this._loadProjectTemplates(root) : [];
+                webviewView.webview.postMessage({ type: 'templatesLoaded', templates });
+            } else if (message.command === 'saveTemplate') {
+                const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                if (!root) {
+                    webviewView.webview.postMessage({ type: 'templateSaveError', message: '❌ No workspace open' });
+                } else if (!message.code) {
+                    webviewView.webview.postMessage({ type: 'templateSaveError', message: '❌ Editor is empty' });
+                } else {
+                    const name = await vscode.window.showInputBox({ prompt: 'Template name', placeHolder: 'e.g. find-active-users' });
+                    if (!name || !name.trim()) return;
+                    try {
+                        this._saveProjectTemplate(root, name.trim(), message.code);
+                        webviewView.webview.postMessage({ type: 'templatesLoaded', templates: this._loadProjectTemplates(root) });
+                        webviewView.webview.postMessage({ type: 'templateSaved', name: name.trim() });
+                    } catch (e) {
+                        console.error('[Tinker] saveTemplate error:', e);
+                        webviewView.webview.postMessage({ type: 'templateSaveError', message: '❌ Save failed: ' + e.message });
+                    }
+                }
+            } else if (message.command === 'deleteTemplate') {
+                const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                if (root && message.name) {
+                    const pick = await vscode.window.showWarningMessage(`Delete template "${message.name}"?`, { modal: true }, 'Delete');
+                    if (pick !== 'Delete') return;
+                    this._deleteProjectTemplate(root, message.name);
+                    webviewView.webview.postMessage({ type: 'templatesLoaded', templates: this._loadProjectTemplates(root) });
+                    webviewView.webview.postMessage({ type: 'templateSaved', name: '🗑️ Deleted: ' + message.name });
+                }
             }
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v2.8.0 | Ready';
+        webviewView.description = 'v3.3.0 | Ready';
         console.log('[Tinker] Webview resolved successfully');
+
+        // Send project templates on load
+        const _rootForTemplates = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (_rootForTemplates) {
+            setTimeout(() => {
+                webviewView.webview.postMessage({ type: 'templatesLoaded', templates: this._loadProjectTemplates(_rootForTemplates) });
+            }, 400);
+        }
 
         // Show tutorial on first run
         const tutorialSeen = this._context.globalState.get('tutorialSeen_v1', false);
@@ -62,6 +106,29 @@ class TinkerSidebarProvider {
                 webviewView.webview.postMessage({ type: 'showTutorial' });
             }, 800);
         }
+    }
+
+    // ── Project Templates (.tinker-templates/*.php) ──────────────
+
+    _loadProjectTemplates(rootPath) {
+        const dir = path.join(rootPath, '.tinker-templates');
+        if (!fs.existsSync(dir)) return [];
+        return fs.readdirSync(dir)
+            .filter(f => f.endsWith('.php'))
+            .sort()
+            .map(f => ({ name: f.replace(/\.php$/, ''), code: fs.readFileSync(path.join(dir, f), 'utf8') }));
+    }
+
+    _saveProjectTemplate(rootPath, name, code) {
+        const dir = path.join(rootPath, '.tinker-templates');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+        const safe = name.replace(/[^a-zA-Z0-9_\- ]/g, '_').trim() || 'template';
+        fs.writeFileSync(path.join(dir, safe + '.php'), code, 'utf8');
+    }
+
+    _deleteProjectTemplate(rootPath, name) {
+        const file = path.join(rootPath, '.tinker-templates', name + '.php');
+        if (fs.existsSync(file)) fs.unlinkSync(file);
     }
 
     // ── Environment detection ────────────────────────────────────
@@ -250,10 +317,11 @@ class TinkerSidebarProvider {
             return;
         }
 
-        const [phpPath, envType] = await Promise.all([
+        const [phpPath, detectedEnv] = await Promise.all([
             this.detectPhpPath(rootPath),
-            this.detectEnv(rootPath)
+            this._envOverride ? Promise.resolve(this._envOverride) : this.detectEnv(rootPath)
         ]);
+        const envType = detectedEnv;
         this._phpPath = phpPath;
         this._envType = envType;
 
@@ -445,14 +513,41 @@ class TinkerSidebarProvider {
         });
     }
 
+
     // ── Webview HTML ─────────────────────────────────────────────
 
     getHtmlForWebview() {
+        const webview = this._webview;
+        const cmBase = vscode.Uri.joinPath(this.extensionUri, 'resources', 'codemirror');
+        const uris = {
+            cmCss:          webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'codemirror.min.css')).toString(),
+            monokaiCss:     webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'monokai.min.css')).toString(),
+            cmJs:           webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'codemirror.min.js')).toString(),
+            xmlJs:          webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'xml.min.js')).toString(),
+            jsJs:           webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'javascript.min.js')).toString(),
+            cssJs:          webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'css.min.js')).toString(),
+            clikeJs:        webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'clike.min.js')).toString(),
+            htmlmixedJs:    webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'htmlmixed.min.js')).toString(),
+            phpJs:          webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'php.min.js')).toString(),
+            matchJs:        webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'matchbrackets.min.js')).toString(),
+            closeJs:        webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'closebrackets.min.js')).toString(),
+        };
         return String.raw`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __CSP_SOURCE__ 'unsafe-inline'; style-src __CSP_SOURCE__ 'unsafe-inline'; font-src __CSP_SOURCE__;">
+    <link rel="stylesheet" href="__CM_CSS_URI__">
+    <link rel="stylesheet" href="__MONOKAI_CSS_URI__">
+    <script src="__CM_JS_URI__"></script>
+    <script src="__XML_JS_URI__"></script>
+    <script src="__JS_JS_URI__"></script>
+    <script src="__CSS_JS_URI__"></script>
+    <script src="__CLIKE_JS_URI__"></script>
+    <script src="__HTMLMIXED_JS_URI__"></script>
+    <script src="__PHP_JS_URI__"></script>
+    <script src="__MATCH_JS_URI__"></script>
+    <script src="__CLOSE_JS_URI__"></script>
     <style>
         :root {
             --bg: var(--vscode-input-background, #1e1e1e);
@@ -482,6 +577,10 @@ class TinkerSidebarProvider {
             padding: 6px; width: 100%; box-sizing: border-box;
         }
         textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
+        #editorContainer { min-height: 120px; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+        #editorContainer .CodeMirror { height: auto; min-height: 120px; font-size: 12px; font-family: var(--vscode-editor-font-family, 'Cascadia Code', Consolas, monospace); background: var(--bg); color: var(--fg); }
+        #editorContainer .CodeMirror-scroll { min-height: 120px; max-height: 400px; }
+        #editorContainer .CodeMirror-gutters { background: var(--vscode-editorGutter-background, #1e1e1e); border-right: 1px solid var(--border); }
         button { background: var(--btn); color: var(--btn-fg); border: none; cursor: pointer; font-weight: 500; }
         button:hover { background: var(--btn-hover); }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -491,8 +590,9 @@ class TinkerSidebarProvider {
         .btn-danger:hover { background: #e33b1a; }
         .btn-small { width: auto; padding: 4px 8px; font-size: 11px; }
         .row { display: flex; gap: 6px; align-items: center; }
-        .output-header { display: flex; gap: 4px; align-items: center; justify-content: space-between; }
+        .output-header { display: flex; gap: 4px; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
         .output-label { font-size: 11px; opacity: 0.6; }
+        .output-chevron { font-size: 9px; opacity: 0.5; margin-left: 2px; }
         .output {
             background: var(--vscode-editor-background, #1e1e1e);
             border: 1px solid var(--vscode-editorGroup-border, #333);
@@ -515,6 +615,7 @@ class TinkerSidebarProvider {
         .badge.sail { background: #1d6fa5; color: #fff; }
         .badge.wsl  { background: #5a2ca0; color: #fff; }
         .badge.local { background: #2d7a2d; color: #fff; }
+        #envBadge:hover { opacity: 0.8; }
         .badge.cached { background: #8a6914; color: #fff; }
         .badge.repl { background: #7a2d7a; color: #fff; }
 
@@ -642,40 +743,7 @@ class TinkerSidebarProvider {
         </div>
 
         <!-- Snippet Templates -->
-        <select id="templateSelect">
-            <option value="">🧩 Insert template...</option>
-            <optgroup label="Models">
-                <option value="User::count();">User::count();</option>
-                <option value="User::all();">User::all();</option>
-                <option value="User::find(1);">User::find(1);</option>
-                <option value="User::where('email', 'test@example.com')->first();">User::where('email', ...)->first();</option>
-                <option value="User::latest()->limit(5)->get();">User::latest()->limit(5)->get();</option>
-            </optgroup>
-            <optgroup label="Database">
-                <option value="DB::table('users')->count();">DB::table('users')->count();</option>
-                <option value="DB::select('SELECT 1');">DB::select('SELECT 1');</option>
-                <option value="Schema::getColumnListing('users');">Schema::getColumnListing('users');</option>
-            </optgroup>
-            <optgroup label="Query Log">
-                <option value="DB::enableQueryLog();">DB::enableQueryLog();</option>
-                <option value="DB::enableQueryLog();\nUser::all();\n$q = DB::getQueryLog();\nreturn $q;">🗄️ Capture query log</option>
-            </optgroup>
-            <optgroup label="App">
-                <option value="app()->environment();">app()->environment();</option>
-                <option value="config('app.name');">config('app.name');</option>
-                <option value="config('database.default');">config('database.default');</option>
-                <option value="now()->toDateTimeString();">now()->toDateTimeString();</option>
-            </optgroup>
-            <optgroup label="Cache &amp; Queue">
-                <option value="Cache::get('key');">Cache::get('key');</option>
-                <option value="Cache::flush();">Cache::flush();</option>
-                <option value="Queue::size();">Queue::size();</option>
-            </optgroup>
-            <optgroup label="Auth">
-                <option value="Auth::user();">Auth::user();</option>
-                <option value="Hash::make('password');">Hash::make('password');</option>
-            </optgroup>
-        </select>
+        <select id="templateSelect"><option value="">🧩 Quick insert template...</option></select>
 
         <!-- History -->
         <input type="text" id="historySearch" placeholder="🔍 ค้นหา history...">
@@ -686,19 +754,20 @@ class TinkerSidebarProvider {
         </div>
 
         <!-- Editor -->
-        <textarea id="editor" placeholder="พิมพ์ PHP code ที่นี่...\nรองรับหลายบรรทัด เช่น:\n$users = User::all();\n$users->count();" spellcheck="false"></textarea>
+        <div id="editorContainer"></div>
 
         <!-- Actions -->
         <div class="row">
             <button id="executeBtn" style="flex:1;">▶ Execute in Tinker</button>
+            <button id="saveTemplateBtnInline" class="btn-small btn-secondary" title="Save current code as template">💾</button>
             <button id="stopBtn" class="btn-danger btn-small" style="display:none;" title="หยุดการทำงาน">■ Stop</button>
         </div>
 
         <div class="status" id="status">พร้อมใช้งาน</div>
 
         <!-- Output -->
-        <div class="output-header">
-            <span class="output-label">Output <span id="viewToggle" class="view-toggle" style="display:none;">[tree]</span></span>
+        <div class="output-header" id="outputPanelHeader">
+            <span class="output-label">Output <span id="viewToggle" class="view-toggle" style="display:none;">[tree]</span><span class="output-chevron" id="outputChevron">▼</span></span>
             <div style="display:flex;gap:4px;">
                 <button id="shareBtn" class="btn-small btn-secondary" title="Share as GitHub Gist" style="display:none;">🌐 Share</button>
                 <button id="copyBtn" class="btn-small btn-secondary" title="Copy output">📋 Copy</button>
@@ -737,6 +806,17 @@ class TinkerSidebarProvider {
                 </div>
             </div>
         </div>
+
+        <!-- Saved Templates panel -->
+        <div class="collapsible-panel">
+            <div class="panel-header" id="templatesPanelHeader">
+                <span>📁 Saved Templates</span>
+                <span id="templatesArrow">▸</span>
+            </div>
+            <div class="panel-body" id="templatesPanelBody" style="display:none;">
+                <div id="templatesList"></div>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -745,7 +825,37 @@ class TinkerSidebarProvider {
         var ANALYTICS_KEY = 'tinker_analytics_v1';
         var MAX_HISTORY = 15;
 
-        var editor = document.getElementById('editor');
+        var cmEditor = CodeMirror(document.getElementById('editorContainer'), {
+            value: '',
+            mode: 'text/x-php',
+            theme: 'monokai',
+            lineNumbers: true,
+            matchBrackets: true,
+            autoCloseBrackets: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false,
+            lineWrapping: true,
+            extraKeys: {
+                'Tab': function(cm) { cm.replaceSelection('    '); },
+                'Ctrl-Enter': function() { if (!executeBtn.disabled) executeBtn.click(); },
+                'Cmd-Enter': function() { if (!executeBtn.disabled) executeBtn.click(); }
+            }
+        });
+        // Compat shim — all existing code uses editor.value / editor.focus()
+        var editor = {
+            get value() { return cmEditor.getValue(); },
+            set value(v) { cmEditor.setValue(v || ''); },
+            focus() { cmEditor.focus(); },
+            get selectionStart() {
+                var cursor = cmEditor.getCursor();
+                var lines = cmEditor.getValue().split('\n');
+                var pos = 0;
+                for (var i = 0; i < cursor.line; i++) pos += lines[i].length + 1;
+                return pos + cursor.ch;
+            },
+            get selectionEnd() { return this.selectionStart; }
+        };
         var executeBtn = document.getElementById('executeBtn');
         var stopBtn = document.getElementById('stopBtn');
         var output = document.getElementById('output');
@@ -757,6 +867,7 @@ class TinkerSidebarProvider {
         var clearOutputBtn = document.getElementById('clearOutputBtn');
         var pinBtn = document.getElementById('pinBtn');
         var templateSelect = document.getElementById('templateSelect');
+        var _selectedProjectTemplateName = null;
         var viewToggle = document.getElementById('viewToggle');
         var replToggle = document.getElementById('replToggle');
         var resetReplBtn = document.getElementById('resetReplBtn');
@@ -785,6 +896,13 @@ class TinkerSidebarProvider {
             document.getElementById('statShares').textContent = a.shares || 0;
             document.getElementById('statTests').textContent = a.tests || 0;
         }
+        document.getElementById('outputPanelHeader').addEventListener('click', function(e) {
+            if (e.target.closest('button')) return;
+            var panel = document.getElementById('output');
+            var collapsed = panel.style.display === 'none';
+            panel.style.display = collapsed ? '' : 'none';
+            document.getElementById('outputChevron').textContent = collapsed ? '▼' : '▶';
+        });
         document.getElementById('analyticsHeader').addEventListener('click', function() {
             var body = document.getElementById('analyticsBody');
             var open = body.classList.toggle('open');
@@ -808,16 +926,79 @@ class TinkerSidebarProvider {
             status.textContent = '↺ REPL session reset';
         });
 
+        var _envModes = ['local', 'sail', 'wsl'];
+        envBadge.style.cursor = 'pointer';
+        envBadge.title = 'Click to switch mode';
+        envBadge.addEventListener('click', function() {
+            var cur = _envModes.indexOf(envBadge.textContent);
+            var next = _envModes[(cur + 1) % _envModes.length];
+            envBadge.textContent = next;
+            envBadge.className = 'badge ' + next;
+            vscode.postMessage({ command: 'setEnvType', envType: next });
+            status.textContent = '⚙️ Mode: ' + next;
+        });
+
         // ── Snippet Templates ──────────────────────────────────────
+        var _projectTemplates = [];
+
+        function renderTemplates(projectTemplates) {
+            _projectTemplates = projectTemplates || [];
+            // Update quick-insert dropdown
+            templateSelect.innerHTML = _projectTemplates.length === 0
+                ? '<option value="">🧩 No templates saved yet...</option>'
+                : '<option value="">🧩 Quick insert...</option>';
+            _projectTemplates.forEach(function(t) {
+                var opt = document.createElement('option');
+                opt.value = t.code;
+                opt.textContent = '📄 ' + t.name;
+                opt.dataset.project = '1';
+                opt.dataset.tname = t.name;
+                templateSelect.appendChild(opt);
+            });
+            _selectedProjectTemplateName = null;
+            // Update panel list
+            renderTemplatesList();
+        }
+
+        function renderTemplatesList() {
+            var list = document.getElementById('templatesList');
+            if (!list) return;
+            if (_projectTemplates.length === 0) {
+                list.innerHTML = '<div style="color:var(--vscode-descriptionForeground);font-size:11px;padding:4px 0;">No templates yet. Save code from the editor to get started.</div>';
+                return;
+            }
+            list.innerHTML = _projectTemplates.map(function(t) {
+                var safeName = t.name.replace(/</g, '&lt;');
+                return '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid var(--vscode-widget-border);">' +
+                    '<span style="font-size:14px;">📄</span>' +
+                    '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" title="' + safeName + '">' + safeName + '</span>' +
+                    '<button class="btn-small" onclick="loadTemplateByName(\'' + safeName + '\')" title="Load into editor">Load</button>' +
+                    '<button class="btn-small btn-danger" onclick="deleteTemplateByName(\'' + safeName + '\')" title="Delete template">🗑️</button>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function loadTemplateByName(name) {
+            var t = _projectTemplates.find(function(t) { return t.name === name; });
+            if (!t) return;
+            editor.value = t.code;
+            editor.focus();
+            status.textContent = '📄 Template loaded: ' + name;
+        }
+
+        function deleteTemplateByName(name) {
+            vscode.postMessage({ command: 'deleteTemplate', name: name });
+        }
+
         templateSelect.addEventListener('change', function() {
             if (!this.value) return;
+            var val = this.value.replace(/\\n/g, '\n');
             var pos = editor.selectionStart;
             var before = editor.value.substring(0, pos);
             var after = editor.value.substring(editor.selectionEnd);
             var sep = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
-            editor.value = before + sep + this.value + '\n' + after;
+            editor.value = before + sep + val + '\n' + after;
             editor.focus();
-            this.value = '';
         });
 
         // ── History ────────────────────────────────────────────────
@@ -1070,6 +1251,12 @@ class TinkerSidebarProvider {
 
         stopBtn.addEventListener('click', function() { vscode.postMessage({ command: 'stopProcess' }); });
 
+        document.getElementById('saveTemplateBtnInline').addEventListener('click', function() {
+            var code = editor.value.trim();
+            if (!code) { status.textContent = '⚠️ Editor is empty'; return; }
+            vscode.postMessage({ command: 'saveTemplate', code: code });
+        });
+
         document.addEventListener('keydown', function(e) {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
@@ -1117,6 +1304,7 @@ class TinkerSidebarProvider {
             } else if (msg.type === 'envDetected') {
                 envBadge.textContent = msg.envType;
                 envBadge.className = 'badge ' + msg.envType;
+                envBadge.title = 'Click to switch mode';
 
             } else if (msg.type === 'replReset') {
                 status.textContent = '↺ REPL reset — variables cleared';
@@ -1142,6 +1330,14 @@ class TinkerSidebarProvider {
 
             } else if (msg.type === 'showTutorial') {
                 startTutorial();
+            } else if (msg.type === 'templatesLoaded') {
+                renderTemplates(msg.templates);
+            } else if (msg.type === 'templateSaved') {
+                status.textContent = '💾 Saved: ' + msg.name;
+                status.className = 'status success';
+            } else if (msg.type === 'templateSaveError') {
+                status.textContent = msg.message;
+                status.className = 'status error';
             }
         });
 
@@ -1192,25 +1388,50 @@ class TinkerSidebarProvider {
             vscode.postMessage({ command: 'tutorialDone' });
         }
 
+        // ── Saved Templates panel ──────────────────────────────────
+        document.getElementById('templatesPanelHeader').addEventListener('click', function() {
+            var body = document.getElementById('templatesPanelBody');
+            var arrow = document.getElementById('templatesArrow');
+            var open = body.style.display !== 'none';
+            body.style.display = open ? 'none' : 'block';
+            arrow.textContent = open ? '▸' : '▾';
+            if (!open) { renderTemplatesList(); }
+        });
+
         // ── Init ───────────────────────────────────────────────────
         window.onerror = function(msg, src, line) {
             vscode.postMessage({ command: 'debug', text: 'Webview error: ' + msg + ' (' + src + ':' + line + ')' });
         };
         loadHistory();
+        vscode.postMessage({ command: 'loadTemplates' });
         vscode.postMessage({ command: 'debug', text: 'Webview JS initialized successfully' });
     </script>
+
 </body>
-</html>`.replace(/\${VS_CODE_ENV}/g, process.env.NODE_ENV || 'production');
+</html>`
+            .replace(/\${VS_CODE_ENV}/g, process.env.NODE_ENV || 'production')
+            .replace(/__CSP_SOURCE__/g, webview.cspSource)
+            .replace('__CM_CSS_URI__', uris.cmCss)
+            .replace('__MONOKAI_CSS_URI__', uris.monokaiCss)
+            .replace('__CM_JS_URI__', uris.cmJs)
+            .replace('__XML_JS_URI__', uris.xmlJs)
+            .replace('__JS_JS_URI__', uris.jsJs)
+            .replace('__CSS_JS_URI__', uris.cssJs)
+            .replace('__CLIKE_JS_URI__', uris.clikeJs)
+            .replace('__HTMLMIXED_JS_URI__', uris.htmlmixedJs)
+            .replace('__PHP_JS_URI__', uris.phpJs)
+            .replace('__MATCH_JS_URI__', uris.matchJs)
+            .replace('__CLOSE_JS_URI__', uris.closeJs);
     }
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v2.8.0...');
+    console.log('[Artisan Tinker] Activating v3.3.0...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v2.8.0 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.3.0 พร้อมใช้งาน');
 }
 
 function deactivate() {

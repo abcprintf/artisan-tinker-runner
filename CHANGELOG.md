@@ -1,5 +1,129 @@
 # Changelog
 
+## [3.2.4] - 2026-06-03
+
+### Fixed
+
+- Save template button (💾) silently did nothing — `window.prompt()` and `window.confirm()` are disabled in VS Code webview sandbox and always return `null`. Replaced with `vscode.window.showInputBox()` for naming and `vscode.window.showWarningMessage()` for delete confirmation.
+- Save template now shows proper success/error feedback in the status bar.
+
+## [3.2.2] - 2026-06-03
+
+### Changed
+
+- Moved 💾 Save Template button next to the **▶ Execute in Tinker** button for quicker access after a run.
+
+## [3.2.0] - 2026-06-03
+
+### Added
+
+- **Project Templates**: templates are now stored as `.php` files inside `.tinker-templates/` in the workspace root — commit the folder to git and the whole team shares the same templates automatically.
+- **Saved Templates panel**: collapsible panel listing saved templates with 📄 icon, name, **Load** and **🗑️ Delete** per row.
+
+### Removed
+
+- Hardcoded built-in example templates (User::count, DB::table, etc.) — replaced by the project-level template system.
+- **Project Snippets** panel and its `workspaceState` storage — superseded by the file-based template system which is git-shareable.
+
+---
+
+## [3.1.1] - 2026-06-03
+
+### Added
+
+- Output section is now collapsible — click the output header to toggle it open/closed.
+
+---
+
+## [3.1.0] - 2026-06-03
+
+### Removed
+
+- Removed AI Suggest feature temporarily (compatibility issues with Cursor and non-Copilot editors)
+
+---
+
+## [3.0.7] - 2026-06-03
+
+### Fixed
+
+- Ask AI Submit now immediately shows "Thinking..." and the Stop button without waiting for the extension host — prevents blank silent state when the host encounters an unexpected error
+- Wrapped entire AI request flow in an outer try/catch so any unhandled error surfaces as a visible error message instead of silently doing nothing
+
+---
+
+## [3.0.6] - 2026-06-03
+
+### Fixed
+
+- Extension failed to activate — parameter named `prompt` in `_handleAiSuggest` conflicted with a `const prompt` declaration inside the same function (SyntaxError). Renamed parameter to `userPrompt`.
+- Ask AI Submit did nothing — `_handleAiSuggest` was referencing undefined `message` variable instead of its own parameters, causing a silent ReferenceError before any response was sent back to the webview
+
+---
+
+## [3.0.4] - 2026-06-03
+
+### Added
+
+- Ask AI now shows a "Thinking..." status and a Stop button while the AI is generating a response
+- Stop button cancels the in-progress AI request and shows whatever was generated so far (Accept or Dismiss)
+
+---
+
+## [3.0.3] - 2026-06-03
+
+### Fixed
+
+- Ask AI now displays error messages in the output panel instead of silently resetting when the AI request fails
+- Improved error message when no compatible AI model is found (e.g. when using Cursor without GitHub Copilot)
+
+---
+
+## [3.0.2] - 2026-06-03
+
+### Fixed
+
+- Fixed "✨ AI" button not showing the input panel when the editor is empty (moved validation to Submit)
+
+---
+
+## [3.0.1] - 2026-06-03
+
+### Added
+
+- **✨ AI Suggest — @mention Model context** — Click "✨ AI" to open the prompt input. Type your question + `@ModelName` (e.g. `@User @Order`) to attach that Model's schema as context before sending to Copilot. Press Ctrl+Enter or Submit to receive the suggestion.
+- **✨ AI Suggest — Smart Model filter** — Auto-detects Model names from the code you've written (e.g. `User::`, `new Order()`) and loads only the relevant files. Supports projects with 100+ Models.
+- **✨ AI Suggest — Project Model context** — Reads `app/Models/*.php` and extracts `$fillable`, `$casts`, `$table`, and relations so Copilot understands your project's actual schema.
+
+### Fixed
+
+- Excluded `.claude/` folder from VSIX package
+
+---
+
+## [3.0.0] - 2026-06-03
+
+### Added
+
+- **✨ AI Code Suggestions** — New "✨ AI" button next to Execute. Uses the VS Code Language Model API (GitHub Copilot) to stream PHP/Laravel code suggestions. Click Accept to insert the suggestion into the editor, or Dismiss to close the panel. Requires GitHub Copilot extension and VS Code 1.90+.
+- **📁 Project Snippets Library** — Save named PHP snippets scoped to the current workspace (stored in VS Code `workspaceState`, isolated per project). New collapsible "Project Snippets" panel with Load, Save, and Delete actions — separate from the global run history.
+
+### Changed
+
+- Minimum VS Code version bumped to `1.90.0` (required for Language Model API)
+
+---
+
+
+## [2.9.1] - 2026-06-03
+
+### Fixed
+
+- **Activity bar icon** — Replaced complex multi-color SVG (gradients/filters) with monochromatic `currentColor` SVG so VS Code can theme it correctly
+- **Mode switcher** — `local`/`sail`/`wsl` badge is now clickable to manually override auto-detected environment; cycles through modes and persists until next reload
+
+---
+
 ## [2.9.0] - 2026-06-03
 
 ### Changed

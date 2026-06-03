@@ -4,7 +4,7 @@
 
 **Developed by [abcprintf](https://github.com/abcprintf) · [workitdee.com](https://workitdee.com)**
 
-![Artisan Tinker Runner Overview](screens/overview.png)
+![Artisan Tinker Runner Overview](screens/overview.gif)
 
 ---
 
@@ -13,6 +13,7 @@
 | Feature | Description |
 |---------|-------------|
 | 🖥️ **Sidebar Panel** | Dedicated panel in Activity Bar, always accessible, theme-aware |
+| 🎨 **PHP Code Editor** | Syntax highlighting, line numbers, bracket matching & auto-close — powered by CodeMirror |
 | ⚡ **Quick Execution** | Run PHP code via `php artisan tinker --execute` safely |
 | 🛑 **Stop Process** | Kill a runaway or infinite-loop process instantly with the Stop button |
 | 📜 **Execution History** | Auto-saves successful snippets (up to 15) with timestamps |
