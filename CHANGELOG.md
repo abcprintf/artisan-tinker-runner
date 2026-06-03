@@ -1,5 +1,40 @@
 # Changelog
 
+## [3.2.4] - 2026-06-03
+
+### Fixed
+
+- Save template button (💾) silently did nothing — `window.prompt()` and `window.confirm()` are disabled in VS Code webview sandbox and always return `null`. Replaced with `vscode.window.showInputBox()` for naming and `vscode.window.showWarningMessage()` for delete confirmation.
+- Save template now shows proper success/error feedback in the status bar.
+
+## [3.2.2] - 2026-06-03
+
+### Changed
+
+- Moved 💾 Save Template button next to the **▶ Execute in Tinker** button for quicker access after a run.
+
+## [3.2.0] - 2026-06-03
+
+### Added
+
+- **Project Templates**: templates are now stored as `.php` files inside `.tinker-templates/` in the workspace root — commit the folder to git and the whole team shares the same templates automatically.
+- **Saved Templates panel**: collapsible panel listing saved templates with 📄 icon, name, **Load** and **🗑️ Delete** per row.
+
+### Removed
+
+- Hardcoded built-in example templates (User::count, DB::table, etc.) — replaced by the project-level template system.
+- **Project Snippets** panel and its `workspaceState` storage — superseded by the file-based template system which is git-shareable.
+
+---
+
+## [3.1.1] - 2026-06-03
+
+### Added
+
+- Output section is now collapsible — click the output header to toggle it open/closed.
+
+---
+
 ## [3.1.0] - 2026-06-03
 
 ### Removed
