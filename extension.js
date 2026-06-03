@@ -59,9 +59,19 @@ class TinkerSidebarProvider {
                 webviewView.webview.postMessage({ type: 'templatesLoaded', templates });
             } else if (message.command === 'saveTemplate') {
                 const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
-                if (root && message.name && message.code) {
-                    this._saveProjectTemplate(root, message.name, message.code);
-                    webviewView.webview.postMessage({ type: 'templatesLoaded', templates: this._loadProjectTemplates(root) });
+                if (!root) {
+                    webviewView.webview.postMessage({ type: 'templateSaveError', message: '❌ No workspace open' });
+                } else if (!message.name || !message.code) {
+                    webviewView.webview.postMessage({ type: 'templateSaveError', message: '❌ Name or code is empty' });
+                } else {
+                    try {
+                        this._saveProjectTemplate(root, message.name, message.code);
+                        webviewView.webview.postMessage({ type: 'templatesLoaded', templates: this._loadProjectTemplates(root) });
+                        webviewView.webview.postMessage({ type: 'templateSaved', name: message.name });
+                    } catch (e) {
+                        console.error('[Tinker] saveTemplate error:', e);
+                        webviewView.webview.postMessage({ type: 'templateSaveError', message: '❌ Save failed: ' + e.message });
+                    }
                 }
             } else if (message.command === 'deleteTemplate') {
                 const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -73,7 +83,7 @@ class TinkerSidebarProvider {
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v3.2.2 | Ready';
+        webviewView.description = 'v3.2.3 | Ready';
         console.log('[Tinker] Webview resolved successfully');
 
         // Send project templates on load
@@ -1262,6 +1272,12 @@ class TinkerSidebarProvider {
                 startTutorial();
             } else if (msg.type === 'templatesLoaded') {
                 renderTemplates(msg.templates);
+            } else if (msg.type === 'templateSaved') {
+                status.textContent = '💾 Saved: ' + msg.name;
+                status.className = 'status success';
+            } else if (msg.type === 'templateSaveError') {
+                status.textContent = msg.message;
+                status.className = 'status error';
             }
         });
 
@@ -1336,12 +1352,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v3.2.2...');
+    console.log('[Artisan Tinker] Activating v3.2.3...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.2.2 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.2.3 พร้อมใช้งาน');
 }
 
 function deactivate() {
