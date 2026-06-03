@@ -73,7 +73,7 @@ class TinkerSidebarProvider {
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v3.2.1 | Ready';
+        webviewView.description = 'v3.2.2 | Ready';
         console.log('[Tinker] Webview resolved successfully');
 
         // Send project templates on load
@@ -714,6 +714,7 @@ class TinkerSidebarProvider {
         <!-- Actions -->
         <div class="row">
             <button id="executeBtn" style="flex:1;">▶ Execute in Tinker</button>
+            <button id="saveTemplateBtnInline" class="btn-small btn-secondary" title="Save current code as template">💾</button>
             <button id="stopBtn" class="btn-danger btn-small" style="display:none;" title="หยุดการทำงาน">■ Stop</button>
         </div>
 
@@ -768,8 +769,7 @@ class TinkerSidebarProvider {
                 <span id="templatesArrow">▸</span>
             </div>
             <div class="panel-body" id="templatesPanelBody" style="display:none;">
-                <div id="templatesList" style="margin-bottom:6px;"></div>
-                <button id="saveTemplateFromPanelBtn" class="btn-secondary btn-small" style="width:100%;" title="Save current editor code as a template">💾 Save current code as template</button>
+                <div id="templatesList"></div>
             </div>
         </div>
     </div>
@@ -1178,6 +1178,15 @@ class TinkerSidebarProvider {
 
         stopBtn.addEventListener('click', function() { vscode.postMessage({ command: 'stopProcess' }); });
 
+        document.getElementById('saveTemplateBtnInline').addEventListener('click', function() {
+            var code = editor.value.trim();
+            if (!code) { status.textContent = '⚠️ Editor is empty'; return; }
+            var name = prompt('Template name:');
+            if (!name || !name.trim()) return;
+            vscode.postMessage({ command: 'saveTemplate', name: name.trim(), code: code });
+            status.textContent = '💾 Saved: ' + name.trim();
+        });
+
         document.addEventListener('keydown', function(e) {
             if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
                 e.preventDefault();
@@ -1313,15 +1322,6 @@ class TinkerSidebarProvider {
             if (!open) { renderTemplatesList(); }
         });
 
-        document.getElementById('saveTemplateFromPanelBtn').addEventListener('click', function() {
-            var code = editor.value.trim();
-            if (!code) { status.textContent = '⚠️ Editor is empty'; return; }
-            var name = prompt('Template name:');
-            if (!name || !name.trim()) return;
-            vscode.postMessage({ command: 'saveTemplate', name: name.trim(), code: code });
-            status.textContent = '💾 Saved: ' + name.trim();
-        });
-
         // ── Init ───────────────────────────────────────────────────
         window.onerror = function(msg, src, line) {
             vscode.postMessage({ command: 'debug', text: 'Webview error: ' + msg + ' (' + src + ':' + line + ')' });
@@ -1336,12 +1336,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v3.2.1...');
+    console.log('[Artisan Tinker] Activating v3.2.2...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.2.1 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.2.2 พร้อมใช้งาน');
 }
 
 function deactivate() {

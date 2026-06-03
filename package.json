@@ -2,7 +2,7 @@
   "name": "artisan-tinker-runner",
   "displayName": "Artisan Tinker Runner",
   "description": "Laravel Artisan Tinker sidebar with Query Log Viewer, Gist sharing, Test Runner, Analytics & Interactive Tutorial",
-  "version": "3.2.1",
+  "version": "3.2.2",
   "publisher": "workitdee",
   "author": {
     "name": "abcprintf",
