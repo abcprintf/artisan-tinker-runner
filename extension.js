@@ -950,11 +950,49 @@ class TinkerSidebarProvider {
             try { localStorage.setItem('tinker_lang', lang); } catch(e) {}
             renderAllText();
         }
+        function renderAllText() {
+            // Buttons
+            executeBtn.textContent = t('execute');
+            document.getElementById('runTestBtn').textContent = t('runTest');
+            document.getElementById('resetStatsBtn').textContent = t('resetStats');
+            resetReplBtn.title = t('tooltip.resetRepl');
+            resetReplBtn.textContent = t('resetRepl');
+            pinBtn.title = t('tooltip.pin');
+            document.getElementById('clearHistoryBtn').title = t('tooltip.clearHistory');
+            document.getElementById('saveTemplateBtnInline').title = t('tooltip.saveTemplate');
+            shareBtn.title = t('tooltip.share');
+            copyBtn.title = t('tooltip.copy');
+            document.getElementById('clearOutputBtn').title = t('tooltip.clearOutput');
+            // Labels
+            document.getElementById('replLabel').textContent = t('persistentRepl.label');
+            document.getElementById('outputLabel').textContent = t('output.label');
+            document.getElementById('testRunnerLabel').textContent = t('panel.testRunner');
+            document.getElementById('statsLabel').textContent = t('panel.stats');
+            document.getElementById('templatesLabel').textContent = t('panel.templates');
+            // Placeholders
+            historySearch.placeholder = t('history.placeholder');
+            document.getElementById('testFilter').placeholder = t('testFilter.placeholder');
+            // History select default option
+            if (historySelect.options[0]) historySelect.options[0].textContent = t('history.select');
+            // Tutorial (update live if open)
+            var tutNext = document.getElementById('tutNext');
+            if (tutNext) tutNext.textContent = (_tutStep < TUTORIAL_STEPS.length - 1) ? t('tutNext') : t('tutDone');
+            var tutSkipEl = document.getElementById('tutSkip');
+            if (tutSkipEl) tutSkipEl.textContent = t('tutSkip');
+            // Re-render templates list if panel is open
+            var templatesBody = document.getElementById('templatesPanelBody');
+            if (templatesBody && templatesBody.style.display !== 'none') { renderTemplatesList(); }
+        }
         /* ── end i18n ──────────────────────────────────────────────── */
+
+        var langSelect = document.getElementById('langSelect');
+        langSelect.value = _lang;
+        langSelect.addEventListener('change', function() { applyLang(this.value); });
 
         var _lastRawOutput = '';
         var _viewMode = 'text';
         var _selectedHistoryCode = '';
+        renderAllText();
 
         // ── Analytics ─────────────────────────────────────────────
         function getAnalytics() {
