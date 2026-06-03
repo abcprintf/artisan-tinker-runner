@@ -53,19 +53,6 @@ class TinkerSidebarProvider {
                 this._context.globalState.update('tutorialSeen_v1', true);
             } else if (message.command === 'debug') {
                 console.log('[Tinker Webview]', message.text);
-            } else if (message.command === 'saveSnippet') {
-                if (message.name && message.code) {
-                    const snips = this._context.workspaceState.get('tinkerSnippets', []);
-                    snips.push({ id: Date.now().toString(), name: message.name, code: message.code, createdAt: new Date().toISOString() });
-                    await this._context.workspaceState.update('tinkerSnippets', snips);
-                    webviewView.webview.postMessage({ type: 'snippetsUpdated', snippets: snips });
-                }
-            } else if (message.command === 'deleteSnippet') {
-                const snips = this._context.workspaceState.get('tinkerSnippets', []).filter(s => s.id !== message.id);
-                await this._context.workspaceState.update('tinkerSnippets', snips);
-                webviewView.webview.postMessage({ type: 'snippetsUpdated', snippets: snips });
-            } else if (message.command === 'getSnippets') {
-                webviewView.webview.postMessage({ type: 'snippetsUpdated', snippets: this._context.workspaceState.get('tinkerSnippets', []) });
             } else if (message.command === 'loadTemplates') {
                 const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
                 const templates = root ? this._loadProjectTemplates(root) : [];
@@ -86,7 +73,7 @@ class TinkerSidebarProvider {
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v3.2.0 | Ready';
+        webviewView.description = 'v3.2.1 | Ready';
         console.log('[Tinker] Webview resolved successfully');
 
         // Send project templates on load
@@ -711,11 +698,7 @@ class TinkerSidebarProvider {
         </div>
 
         <!-- Snippet Templates -->
-        <div class="row">
-            <select id="templateSelect" style="flex:1;"><option value="">🧩 Templates...</option></select>
-            <button id="saveTemplateBtn" class="btn-small btn-secondary" title="Save current editor code as project template">💾</button>
-            <button id="deleteTemplateBtn" class="btn-small btn-secondary" title="Delete selected project template" style="display:none;">🗑️</button>
-        </div>
+        <select id="templateSelect"><option value="">🧩 Quick insert template...</option></select>
 
         <!-- History -->
         <input type="text" id="historySearch" placeholder="🔍 ค้นหา history...">
@@ -778,19 +761,15 @@ class TinkerSidebarProvider {
             </div>
         </div>
 
-        <!-- Project Snippets panel -->
+        <!-- Saved Templates panel -->
         <div class="collapsible-panel">
-            <div class="panel-header" id="snippetsPanelHeader">
-                <span>📁 Project Snippets</span>
-                <span id="snippetsArrow">▸</span>
+            <div class="panel-header" id="templatesPanelHeader">
+                <span>📁 Saved Templates</span>
+                <span id="templatesArrow">▸</span>
             </div>
-            <div class="panel-body" id="snippetsPanelBody" style="display:none;">
-                <select id="snippetSelect" style="width:100%;margin-bottom:4px;"><option value="">— no snippets saved —</option></select>
-                <div style="display:flex;gap:4px;">
-                    <button id="loadSnippetBtn" class="btn-small" title="Load selected snippet into editor">Load</button>
-                    <button id="saveSnippetBtn" class="btn-secondary btn-small" title="Save current editor code as a snippet">Save</button>
-                    <button id="deleteSnippetBtn" class="btn-danger btn-small" title="Delete selected snippet">Delete</button>
-                </div>
+            <div class="panel-body" id="templatesPanelBody" style="display:none;">
+                <div id="templatesList" style="margin-bottom:6px;"></div>
+                <button id="saveTemplateFromPanelBtn" class="btn-secondary btn-small" style="width:100%;" title="Save current editor code as a template">💾 Save current code as template</button>
             </div>
         </div>
     </div>
@@ -813,8 +792,6 @@ class TinkerSidebarProvider {
         var clearOutputBtn = document.getElementById('clearOutputBtn');
         var pinBtn = document.getElementById('pinBtn');
         var templateSelect = document.getElementById('templateSelect');
-        var saveTemplateBtn = document.getElementById('saveTemplateBtn');
-        var deleteTemplateBtn = document.getElementById('deleteTemplateBtn');
         var _selectedProjectTemplateName = null;
         var viewToggle = document.getElementById('viewToggle');
         var replToggle = document.getElementById('replToggle');
@@ -887,83 +864,61 @@ class TinkerSidebarProvider {
         });
 
         // ── Snippet Templates ──────────────────────────────────────
+        var _projectTemplates = [];
+
         function renderTemplates(projectTemplates) {
-            templateSelect.innerHTML = '<option value="">🧩 Templates...</option>';
-            if (projectTemplates && projectTemplates.length > 0) {
-                var pg = document.createElement('optgroup');
-                pg.label = '📁 Project Templates';
-                projectTemplates.forEach(function(t) {
-                    var opt = document.createElement('option');
-                    opt.value = t.code;
-                    opt.textContent = t.name;
-                    opt.dataset.project = '1';
-                    opt.dataset.tname = t.name;
-                    pg.appendChild(opt);
-                });
-                templateSelect.appendChild(pg);
-            }
-            var builtins = [
-                { group: 'Models', items: [
-                    { label: 'User::count();', value: 'User::count();' },
-                    { label: 'User::all();', value: 'User::all();' },
-                    { label: 'User::find(1);', value: 'User::find(1);' },
-                    { label: "User::where('email', ...)->first();", value: "User::where('email', 'test@example.com')->first();" },
-                    { label: 'User::latest()->limit(5)->get();', value: 'User::latest()->limit(5)->get();' },
-                ]},
-                { group: 'Database', items: [
-                    { label: "DB::table('users')->count();", value: "DB::table('users')->count();" },
-                    { label: "DB::select('SELECT 1');", value: "DB::select('SELECT 1');" },
-                    { label: "Schema::getColumnListing('users');", value: "Schema::getColumnListing('users');" },
-                ]},
-                { group: 'Query Log', items: [
-                    { label: 'DB::enableQueryLog();', value: 'DB::enableQueryLog();' },
-                    { label: '🗄️ Capture query log', value: "DB::enableQueryLog();\nUser::all();\n$q = DB::getQueryLog();\nreturn $q;" },
-                ]},
-                { group: 'App', items: [
-                    { label: 'app()->environment();', value: 'app()->environment();' },
-                    { label: "config('app.name');", value: "config('app.name');" },
-                    { label: "config('database.default');", value: "config('database.default');" },
-                    { label: 'now()->toDateTimeString();', value: 'now()->toDateTimeString();' },
-                ]},
-                { group: 'Cache & Queue', items: [
-                    { label: "Cache::get('key');", value: "Cache::get('key');" },
-                    { label: 'Cache::flush();', value: 'Cache::flush();' },
-                    { label: 'Queue::size();', value: 'Queue::size();' },
-                ]},
-                { group: 'Auth', items: [
-                    { label: 'Auth::user();', value: 'Auth::user();' },
-                    { label: "Hash::make('password');", value: "Hash::make('password');" },
-                ]},
-            ];
-            builtins.forEach(function(g) {
-                var og = document.createElement('optgroup');
-                og.label = g.group;
-                g.items.forEach(function(item) {
-                    var opt = document.createElement('option');
-                    opt.value = item.value;
-                    opt.textContent = item.label;
-                    og.appendChild(opt);
-                });
-                templateSelect.appendChild(og);
+            _projectTemplates = projectTemplates || [];
+            // Update quick-insert dropdown
+            templateSelect.innerHTML = _projectTemplates.length === 0
+                ? '<option value="">🧩 No templates saved yet...</option>'
+                : '<option value="">🧩 Quick insert...</option>';
+            _projectTemplates.forEach(function(t) {
+                var opt = document.createElement('option');
+                opt.value = t.code;
+                opt.textContent = '📄 ' + t.name;
+                opt.dataset.project = '1';
+                opt.dataset.tname = t.name;
+                templateSelect.appendChild(opt);
             });
             _selectedProjectTemplateName = null;
-            deleteTemplateBtn.style.display = 'none';
+            // Update panel list
+            renderTemplatesList();
+        }
+
+        function renderTemplatesList() {
+            var list = document.getElementById('templatesList');
+            if (!list) return;
+            if (_projectTemplates.length === 0) {
+                list.innerHTML = '<div style="color:var(--vscode-descriptionForeground);font-size:11px;padding:4px 0;">No templates yet. Save code from the editor to get started.</div>';
+                return;
+            }
+            list.innerHTML = _projectTemplates.map(function(t) {
+                var safeName = t.name.replace(/</g, '&lt;');
+                return '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid var(--vscode-widget-border);">' +
+                    '<span style="font-size:14px;">📄</span>' +
+                    '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" title="' + safeName + '">' + safeName + '</span>' +
+                    '<button class="btn-small" onclick="loadTemplateByName(\'' + safeName + '\')" title="Load into editor">Load</button>' +
+                    '<button class="btn-small btn-danger" onclick="deleteTemplateByName(\'' + safeName + '\')" title="Delete template">🗑️</button>' +
+                    '</div>';
+            }).join('');
+        }
+
+        function loadTemplateByName(name) {
+            var t = _projectTemplates.find(function(t) { return t.name === name; });
+            if (!t) return;
+            editor.value = t.code;
+            editor.focus();
+            status.textContent = '📄 Template loaded: ' + name;
+        }
+
+        function deleteTemplateByName(name) {
+            if (!confirm('Delete template "' + name + '"?')) return;
+            vscode.postMessage({ command: 'deleteTemplate', name: name });
+            status.textContent = '🗑️ Deleted: ' + name;
         }
 
         templateSelect.addEventListener('change', function() {
-            if (!this.value) {
-                _selectedProjectTemplateName = null;
-                deleteTemplateBtn.style.display = 'none';
-                return;
-            }
-            var selOpt = this.options[this.selectedIndex];
-            if (selOpt.dataset.project === '1') {
-                _selectedProjectTemplateName = selOpt.dataset.tname;
-                deleteTemplateBtn.style.display = 'inline-block';
-            } else {
-                _selectedProjectTemplateName = null;
-                deleteTemplateBtn.style.display = 'none';
-            }
+            if (!this.value) return;
             var val = this.value.replace(/\\n/g, '\n');
             var pos = editor.selectionStart;
             var before = editor.value.substring(0, pos);
@@ -971,25 +926,6 @@ class TinkerSidebarProvider {
             var sep = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
             editor.value = before + sep + val + '\n' + after;
             editor.focus();
-        });
-
-        saveTemplateBtn.addEventListener('click', function() {
-            var code = editor.value.trim();
-            if (!code) { status.textContent = '⚠️ Editor is empty'; return; }
-            var name = prompt('Template name:', '');
-            if (!name || !name.trim()) return;
-            vscode.postMessage({ command: 'saveTemplate', name: name.trim(), code: code });
-            status.textContent = '💾 Saved: ' + name.trim();
-        });
-
-        deleteTemplateBtn.addEventListener('click', function() {
-            if (!_selectedProjectTemplateName) return;
-            if (!confirm('Delete template "' + _selectedProjectTemplateName + '"?')) return;
-            vscode.postMessage({ command: 'deleteTemplate', name: _selectedProjectTemplateName });
-            status.textContent = '🗑️ Deleted: ' + _selectedProjectTemplateName;
-            _selectedProjectTemplateName = null;
-            deleteTemplateBtn.style.display = 'none';
-            templateSelect.value = '';
         });
 
         // ── History ────────────────────────────────────────────────
@@ -1315,8 +1251,6 @@ class TinkerSidebarProvider {
 
             } else if (msg.type === 'showTutorial') {
                 startTutorial();
-            } else if (msg.type === 'snippetsUpdated') {
-                renderSnippets(msg.snippets);
             } else if (msg.type === 'templatesLoaded') {
                 renderTemplates(msg.templates);
             }
@@ -1369,55 +1303,30 @@ class TinkerSidebarProvider {
             vscode.postMessage({ command: 'tutorialDone' });
         }
 
-        // ── Project Snippets ───────────────────────────────────────
-        var _snippets = [];
-        var snippetSelect = document.getElementById('snippetSelect');
-
-        document.getElementById('snippetsPanelHeader').addEventListener('click', function() {
-            var body = document.getElementById('snippetsPanelBody');
-            var arrow = document.getElementById('snippetsArrow');
+        // ── Saved Templates panel ──────────────────────────────────
+        document.getElementById('templatesPanelHeader').addEventListener('click', function() {
+            var body = document.getElementById('templatesPanelBody');
+            var arrow = document.getElementById('templatesArrow');
             var open = body.style.display !== 'none';
             body.style.display = open ? 'none' : 'block';
             arrow.textContent = open ? '▸' : '▾';
-            if (!open) { vscode.postMessage({ command: 'getSnippets' }); }
+            if (!open) { renderTemplatesList(); }
         });
 
-        document.getElementById('saveSnippetBtn').addEventListener('click', function() {
+        document.getElementById('saveTemplateFromPanelBtn').addEventListener('click', function() {
             var code = editor.value.trim();
-            if (!code) { status.textContent = '⚠️ Nothing to save.'; return; }
-            var name = window.prompt('Snippet name:');
-            if (!name || !name.trim()) { return; }
-            vscode.postMessage({ command: 'saveSnippet', name: name.trim(), code: code });
+            if (!code) { status.textContent = '⚠️ Editor is empty'; return; }
+            var name = prompt('Template name:');
+            if (!name || !name.trim()) return;
+            vscode.postMessage({ command: 'saveTemplate', name: name.trim(), code: code });
+            status.textContent = '💾 Saved: ' + name.trim();
         });
-
-        document.getElementById('loadSnippetBtn').addEventListener('click', function() {
-            var id = snippetSelect.value;
-            var snip = _snippets.find(function(s) { return s.id === id; });
-            if (snip) { editor.value = snip.code; status.textContent = '📁 Snippet loaded: ' + snip.name; }
-        });
-
-        document.getElementById('deleteSnippetBtn').addEventListener('click', function() {
-            var id = snippetSelect.value;
-            if (!id) { return; }
-            var snip = _snippets.find(function(s) { return s.id === id; });
-            if (snip && window.confirm('Delete snippet "' + snip.name + '"?')) {
-                vscode.postMessage({ command: 'deleteSnippet', id: id });
-            }
-        });
-
-        function renderSnippets(snippets) {
-            _snippets = snippets || [];
-            snippetSelect.innerHTML = _snippets.length === 0
-                ? '<option value="">— no snippets saved —</option>'
-                : _snippets.map(function(s) { return '<option value="' + s.id + '">' + s.name.replace(/</g, '&lt;') + '</option>'; }).join('');
-        }
 
         // ── Init ───────────────────────────────────────────────────
         window.onerror = function(msg, src, line) {
             vscode.postMessage({ command: 'debug', text: 'Webview error: ' + msg + ' (' + src + ':' + line + ')' });
         };
         loadHistory();
-        vscode.postMessage({ command: 'getSnippets' });
         vscode.postMessage({ command: 'loadTemplates' });
         vscode.postMessage({ command: 'debug', text: 'Webview JS initialized successfully' });
     </script>
@@ -1427,12 +1336,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v3.2.0...');
+    console.log('[Artisan Tinker] Activating v3.2.1...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.2.0 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.2.1 พร้อมใช้งาน');
 }
 
 function deactivate() {
