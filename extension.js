@@ -1084,7 +1084,7 @@ class TinkerSidebarProvider {
             var list = document.getElementById('templatesList');
             if (!list) return;
             if (_projectTemplates.length === 0) {
-                list.innerHTML = '<div style="color:var(--vscode-descriptionForeground);font-size:11px;padding:4px 0;">No templates yet. Save code from the editor to get started.</div>';
+                list.innerHTML = '<div style="color:var(--vscode-descriptionForeground);font-size:11px;padding:4px 0;">' + t('templates.empty') + '</div>';
                 return;
             }
             list.innerHTML = _projectTemplates.map(function(t) {
@@ -1092,7 +1092,7 @@ class TinkerSidebarProvider {
                 return '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid var(--vscode-widget-border);">' +
                     '<span style="font-size:14px;">📄</span>' +
                     '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" title="' + safeName + '">' + safeName + '</span>' +
-                    '<button class="btn-small" onclick="loadTemplateByName(\'' + safeName + '\')" title="Load into editor">Load</button>' +
+                    '<button class="btn-small" onclick="loadTemplateByName(\'' + safeName + '\')" title="' + t('templates.load') + '">' + t('templates.load') + '</button>' +
                     '<button class="btn-small btn-danger" onclick="deleteTemplateByName(\'' + safeName + '\')" title="Delete template">🗑️</button>' +
                     '</div>';
             }).join('');
@@ -1463,11 +1463,11 @@ class TinkerSidebarProvider {
 
         // ── Interactive Tutorial ───────────────────────────────────
         var TUTORIAL_STEPS = [
-            { icon: '✍️', title: 'Write PHP Code', desc: 'Type any PHP expression in the editor. Press ▶ Execute or Ctrl+Enter to run it via artisan tinker.' },
-            { icon: '🧩', title: 'Use Templates', desc: 'Pick a snippet from the template dropdown to insert common Laravel code instantly. Includes a Query Log capture template.' },
-            { icon: '📜', title: 'History & Pins', desc: 'Every successful run is saved in History. Search, select, and 📌 pin your most-used snippets so they never get evicted.' },
-            { icon: '🔄', title: 'Persistent REPL', desc: 'Toggle "Persistent REPL" to keep a single tinker process alive between runs — variables persist across executions.' },
-            { icon: '🌐', title: 'Share & Test Runner', desc: 'After a run, click 🌐 Share to post your snippet as a GitHub Gist. Use 🧪 Test Runner panel to run php artisan test directly.' }
+            { icon: '✍️', n: 1 },
+            { icon: '🧩', n: 2 },
+            { icon: '📜', n: 3 },
+            { icon: '🔄', n: 4 },
+            { icon: '🌐', n: 5 }
         ];
         var _tutStep = 0;
 
@@ -1479,11 +1479,12 @@ class TinkerSidebarProvider {
 
         function renderTutStep() {
             var step = TUTORIAL_STEPS[_tutStep];
-            document.getElementById('tutStepNum').textContent = 'Step ' + (_tutStep + 1) + ' of ' + TUTORIAL_STEPS.length;
+            document.getElementById('tutStepNum').textContent = t('tut.stepOf', { n: _tutStep + 1, total: TUTORIAL_STEPS.length });
             document.getElementById('tutIcon').textContent = step.icon;
-            document.getElementById('tutTitle').textContent = step.title;
-            document.getElementById('tutDesc').textContent = step.desc;
-            document.getElementById('tutNext').textContent = _tutStep < TUTORIAL_STEPS.length - 1 ? 'Next →' : '✓ Done';
+            document.getElementById('tutTitle').textContent = t('tut.' + step.n + '.title');
+            document.getElementById('tutDesc').textContent = t('tut.' + step.n + '.desc');
+            document.getElementById('tutNext').textContent = _tutStep < TUTORIAL_STEPS.length - 1 ? t('tutNext') : t('tutDone');
+            document.getElementById('tutSkip').textContent = t('tutSkip');
             var dots = document.getElementById('tutDots');
             dots.innerHTML = '';
             TUTORIAL_STEPS.forEach(function(_, i) {
