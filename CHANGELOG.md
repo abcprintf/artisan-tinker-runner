@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.0] - 2026-06-03
+
+### Added
+- i18n language switching: EN / TH / CN selector in the sidebar header
+- All UI text translated: buttons, labels, tooltips, status messages, tutorial steps, panel headers
+- Language preference persisted to `localStorage` (key: `tinker_lang`), defaults to English
+
 ## [3.2.4] - 2026-06-03
 
 ### Fixed
