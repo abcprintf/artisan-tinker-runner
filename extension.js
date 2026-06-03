@@ -466,31 +466,86 @@ class TinkerSidebarProvider {
         });
     }
 
+    _scanProjectModels(rootPath) {
+        const modelsDir = path.join(rootPath, 'app', 'Models');
+        if (!fs.existsSync(modelsDir)) return '';
+
+        const lines = [];
+        let files;
+        try { files = fs.readdirSync(modelsDir).filter(f => f.endsWith('.php')); }
+        catch (e) { return ''; }
+
+        for (const file of files.slice(0, 20)) { // cap at 20 models
+            const name = file.replace('.php', '');
+            let src;
+            try { src = fs.readFileSync(path.join(modelsDir, file), 'utf8'); }
+            catch (e) { continue; }
+
+            const fields = [];
+
+            // $fillable = ['field', ...]
+            const fillableMatch = src.match(/\$fillable\s*=\s*\[([^\]]*)\]/s);
+            if (fillableMatch) {
+                const names = [...fillableMatch[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
+                fields.push(...names);
+            }
+
+            // $casts = ['field' => 'type', ...]  — add field names not already captured
+            const castsMatch = src.match(/\$casts\s*=\s*\[([^\]]*)\]/s);
+            if (castsMatch) {
+                const names = [...castsMatch[1].matchAll(/'([^']+)'\s*=>/g)].map(m => m[1]);
+                for (const n of names) { if (!fields.includes(n)) fields.push(n); }
+            }
+
+            // $table = 'tablename'
+            const tableMatch = src.match(/\$table\s*=\s*'([^']+)'/);
+            const tablePart = tableMatch ? ` [table: ${tableMatch[1]}]` : '';
+
+            // hasMany/belongsTo/hasOne relationships
+            const relMatches = [...src.matchAll(/public function (\w+)\(\)[^{]*\{[^}]*(?:hasMany|belongsTo|hasOne|belongsToMany|morphTo|morphMany)\s*\(\s*([A-Za-z]+)::class/g)];
+            const rels = relMatches.map(m => `${m[1]}()->${m[2]}`);
+
+            let summary = `${name}${tablePart}`;
+            if (fields.length) summary += `: ${fields.join(', ')}`;
+            if (rels.length) summary += ` | relations: ${rels.join(', ')}`;
+            lines.push(summary);
+        }
+
+        return lines.length ? 'Project Models:\n' + lines.map(l => '  ' + l).join('\n') : '';
+    }
+
     async _handleAiSuggest(code, webview) {
         if (!vscode.lm) {
             webview.postMessage({ type: 'aiError', text: 'Language Model API not available (requires VS Code 1.90+).' });
             return;
         }
-        let models;
+        let lmModels;
         try {
-            models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+            lmModels = await vscode.lm.selectChatModels({ vendor: 'copilot' });
         } catch (e) {
             webview.postMessage({ type: 'aiError', text: 'Could not access Copilot: ' + e.message });
             return;
         }
-        if (!models || models.length === 0) {
+        if (!lmModels || lmModels.length === 0) {
             webview.postMessage({ type: 'aiError', text: 'GitHub Copilot not available. Please install and sign in to GitHub Copilot.' });
             return;
         }
-        const model = models[0];
-        const msgs = [
-            vscode.LanguageModelChatMessage.User(
-                'You are a Laravel Tinker expert. Given this PHP snippet, suggest an improved or extended version. Return only raw PHP code with no markdown fences or explanation:\n\n' + code
-            )
-        ];
+
+        const workspace = vscode.workspace.workspaceFolders?.[0];
+        const modelContext = workspace ? this._scanProjectModels(workspace.uri.fsPath) : '';
+
+        const prompt = [
+            'You are a Laravel Tinker expert.',
+            modelContext || '',
+            'Given this PHP snippet, suggest an improved or extended version.',
+            'Return only raw PHP code with no markdown fences or explanation:\n',
+            code
+        ].filter(Boolean).join('\n');
+
+        const msgs = [ vscode.LanguageModelChatMessage.User(prompt) ];
         const cts = new vscode.CancellationTokenSource();
         try {
-            const req = await model.sendRequest(msgs, {}, cts.token);
+            const req = await lmModels[0].sendRequest(msgs, {}, cts.token);
             for await (const chunk of req.text) {
                 webview.postMessage({ type: 'aiChunk', text: chunk });
             }
