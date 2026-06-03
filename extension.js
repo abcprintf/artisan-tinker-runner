@@ -1408,7 +1408,6 @@ class TinkerSidebarProvider {
         }
 
         aiSuggestBtn.addEventListener('click', function() {
-            if (!editor.value.trim()) { status.textContent = '⚠️ Write some PHP code first.'; return; }
             aiReset();
             aiInputPanel.style.display = 'block';
             setTimeout(function() { aiPromptInput.focus(); }, 50);
@@ -1416,7 +1415,7 @@ class TinkerSidebarProvider {
 
         document.getElementById('aiSubmitBtn').addEventListener('click', function() {
             var code = editor.value.trim();
-            if (!code) { return; }
+            if (!code) { status.textContent = '⚠️ Write some PHP code first.'; aiReset(); return; }
             var promptText = aiPromptInput.value.trim();
             var mentions = [...promptText.matchAll(/@([A-Z][A-Za-z]+)/g)].map(function(m) { return m[1]; });
             aiInputPanel.style.display = 'none';
