@@ -25,3 +25,6 @@ Thumbs.db
 
 # Claude Code internal instructions
 CLAUDE.md
+
+# Internal planning docs (not relevant to extension users)
+docs/superpowers/
