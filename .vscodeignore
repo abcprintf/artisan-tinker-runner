@@ -11,3 +11,4 @@ CLAUDE.md
 .gitignore
 package-lock.json
 .claude/
+docs/

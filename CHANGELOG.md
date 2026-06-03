@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.4.1] - 2026-06-03
+
+### Fixed
+- i18n: panels (Test Runner, Usage Stats, Saved Templates) failed to expand due to TUTORIAL_STEPS not yet initialized when renderAllText() ran on startup
+- i18n: template loop variable `t` shadowed the translation helper causing templates to fail loading from `.tinker-templates` folder
+
+## [3.4.0] - 2026-06-03
+
+### Added
+- i18n language switching: EN / TH / CN selector in the sidebar header
+- All UI text translated: buttons, labels, tooltips, status messages, tutorial steps, panel headers
+- Language preference persisted to `localStorage` (key: `tinker_lang`), defaults to English
+
 ## [3.2.4] - 2026-06-03
 
 ### Fixed

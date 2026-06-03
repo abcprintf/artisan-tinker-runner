@@ -88,7 +88,7 @@ class TinkerSidebarProvider {
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v3.3.0 | Ready';
+        webviewView.description = 'v3.4.1 | Ready';
         console.log('[Tinker] Webview resolved successfully');
 
         // Send project templates on load
@@ -724,11 +724,16 @@ class TinkerSidebarProvider {
     </div>
 
     <div class="container">
-        <div class="row" style="justify-content:space-between;">
+        <div class="row" style="justify-content:space-between;align-items:center;">
             <h3>🪄 Artisan Tinker</h3>
-            <div class="meta-bar">
+            <div class="meta-bar" style="display:flex;align-items:center;gap:6px;">
                 <span id="envBadge" class="badge local">local</span>
                 <span id="cachedBadge" class="badge cached" style="display:none;">cached</span>
+                <select id="langSelect" style="font-size:10px;padding:2px 4px;border-radius:3px;background:var(--vscode-dropdown-background,#3c3c3c);color:var(--vscode-dropdown-foreground,#cccccc);border:1px solid var(--vscode-dropdown-border,#3c3c3c);cursor:pointer;">
+                    <option value="en">EN</option>
+                    <option value="th">TH</option>
+                    <option value="cn">CN</option>
+                </select>
             </div>
         </div>
 
@@ -738,7 +743,7 @@ class TinkerSidebarProvider {
                 <input type="checkbox" id="replToggle">
                 <span class="slider"></span>
             </label>
-            <span>Persistent REPL</span>
+            <span id="replLabel">Persistent REPL</span>
             <button id="resetReplBtn" class="btn-small btn-secondary" style="display:none;" title="Reset REPL session">↺ Reset</button>
         </div>
 
@@ -767,19 +772,19 @@ class TinkerSidebarProvider {
 
         <!-- Output -->
         <div class="output-header" id="outputPanelHeader">
-            <span class="output-label">Output <span id="viewToggle" class="view-toggle" style="display:none;">[tree]</span><span class="output-chevron" id="outputChevron">▼</span></span>
+            <span class="output-label"><span id="outputLabel">Output</span> <span id="viewToggle" class="view-toggle" style="display:none;">[tree]</span><span class="output-chevron" id="outputChevron">▼</span></span>
             <div style="display:flex;gap:4px;">
                 <button id="shareBtn" class="btn-small btn-secondary" title="Share as GitHub Gist" style="display:none;">🌐 Share</button>
                 <button id="copyBtn" class="btn-small btn-secondary" title="Copy output">📋 Copy</button>
                 <button id="clearOutputBtn" class="btn-small btn-secondary" title="Clear output">✕ Clear</button>
             </div>
         </div>
-        <div class="output" id="output">// ผลลัพธ์จะแสดงที่นี่...</div>
+        <div class="output" id="output">// Results will appear here…</div>
 
         <!-- Test Runner panel -->
         <div class="collapsible-panel">
             <div class="panel-header" id="testPanelHeader">
-                <span>🧪 Test Runner</span>
+                <span id="testRunnerLabel">🧪 Test Runner</span>
                 <span id="testToggleArrow">▸</span>
             </div>
             <div class="panel-body" id="testPanelBody">
@@ -792,7 +797,7 @@ class TinkerSidebarProvider {
         <!-- Analytics panel -->
         <div class="collapsible-panel">
             <div class="panel-header" id="analyticsHeader">
-                <span>📈 Usage Stats</span>
+                <span id="statsLabel">📈 Usage Stats</span>
                 <span id="analyticsArrow">▸</span>
             </div>
             <div class="analytics-body" id="analyticsBody">
@@ -810,7 +815,7 @@ class TinkerSidebarProvider {
         <!-- Saved Templates panel -->
         <div class="collapsible-panel">
             <div class="panel-header" id="templatesPanelHeader">
-                <span>📁 Saved Templates</span>
+                <span id="templatesLabel">📁 Saved Templates</span>
                 <span id="templatesArrow">▸</span>
             </div>
             <div class="panel-body" id="templatesPanelBody" style="display:none;">
@@ -874,9 +879,127 @@ class TinkerSidebarProvider {
         var envBadge = document.getElementById('envBadge');
         var cachedBadge = document.getElementById('cachedBadge');
 
+        /* ── i18n ─────────────────────────────────────────────────── */
+        var TRANSLATIONS = {
+            'execute':                  { en: '▶ Execute in Tinker',          th: '▶ รัน Tinker',                                cn: '▶ 执行 Tinker' },
+            'stop':                     { en: '■ Stop',                        th: '■ หยุด',                                      cn: '■ 停止' },
+            'resetRepl':                { en: '↺ Reset',                       th: '↺ รีเซ็ต',                                    cn: '↺ 重置' },
+            'runTest':                  { en: '▶ Run Artisan Test',            th: '▶ รัน Artisan Test',                          cn: '▶ 运行 Artisan Test' },
+            'resetStats':               { en: 'Reset stats',                   th: 'รีเซ็ตสถิติ',                                 cn: '重置统计' },
+            'tutSkip':                  { en: 'Skip tour',                     th: 'ข้ามทัวร์',                                   cn: '跳过导览' },
+            'tutDone':                  { en: '✓ Done',                        th: '✓ เสร็จสิ้น',                                 cn: '✓ 完成' },
+            'tutNext':                  { en: 'Next →',                        th: 'ถัดไป →',                                     cn: '下一步 →' },
+            'history.placeholder':      { en: '🔍 Search history…',           th: '🔍 ค้นหา history…',                           cn: '🔍 搜索历史…' },
+            'history.select':           { en: '📜 Select History…',           th: '📜 เลือก History…',                           cn: '📜 选择历史…' },
+            'testFilter.placeholder':   { en: 'Filter (e.g. UserTest) — empty runs all tests', th: 'กรอง (เช่น UserTest) — เว้นว่างรันทั้งหมด', cn: '过滤 (如 UserTest) — 空则运行全部' },
+            'persistentRepl.label':     { en: 'Persistent REPL',              th: 'REPL ต่อเนื่อง',                              cn: '持久 REPL' },
+            'output.label':             { en: 'Output',                        th: 'ผลลัพธ์',                                     cn: '输出' },
+            'panel.testRunner':         { en: '🧪 Test Runner',               th: '🧪 Test Runner',                              cn: '🧪 测试运行器' },
+            'panel.stats':              { en: '📈 Usage Stats',               th: '📈 สถิติการใช้งาน',                           cn: '📈 使用统计' },
+            'panel.templates':          { en: '📁 Saved Templates',           th: '📁 เทมเพลตที่บันทึก',                         cn: '📁 保存的模板' },
+            'tooltip.pin':              { en: 'Pin/Unpin snippet',             th: 'ปักหมุด/ถอดหมุด',                             cn: '固定/取消固定' },
+            'tooltip.clearHistory':     { en: 'Clear History',                 th: 'ล้าง History',                                cn: '清除历史' },
+            'tooltip.saveTemplate':     { en: 'Save current code as template', th: 'บันทึก code เป็น template',                  cn: '保存代码为模板' },
+            'tooltip.share':            { en: 'Share as GitHub Gist',          th: 'แชร์เป็น GitHub Gist',                       cn: '分享为 GitHub Gist' },
+            'tooltip.copy':             { en: 'Copy output',                   th: 'คัดลอกผลลัพธ์',                               cn: '复制输出' },
+            'tooltip.clearOutput':      { en: 'Clear output',                  th: 'ล้างผลลัพธ์',                                 cn: '清除输出' },
+            'tooltip.resetRepl':        { en: 'Reset REPL session',            th: 'รีเซ็ต REPL session',                         cn: '重置 REPL 会话' },
+            'tooltip.stop':             { en: 'Stop running process',          th: 'หยุดการทำงาน',                                cn: '停止运行' },
+            'status.ready':             { en: 'Ready',                         th: 'พร้อมใช้งาน',                                 cn: '就绪' },
+            'status.replOn':            { en: '🔄 Persistent REPL mode',      th: '🔄 โหมด REPL ต่อเนื่อง',                     cn: '🔄 持久 REPL 模式' },
+            'status.replReset':         { en: '↺ REPL session reset',         th: '↺ รีเซ็ต REPL session',                      cn: '↺ REPL 会话已重置' },
+            'status.replResetVars':     { en: '↺ REPL reset — variables cleared', th: '↺ รีเซ็ต REPL — ล้างตัวแปรแล้ว',        cn: '↺ REPL 已重置 — 变量已清除' },
+            'status.pinUpdated':        { en: '📌 Pin updated',               th: '📌 อัปเดต Pin แล้ว',                          cn: '📌 固定已更新' },
+            'status.historyCleared':    { en: '✅ History cleared',            th: '✅ ล้าง History แล้ว',                        cn: '✅ 历史已清除' },
+            'status.templateLoaded':    { en: '📄 Template loaded: {name}',   th: '📄 โหลด template: {name}',                   cn: '📄 已加载模板: {name}' },
+            'status.templateSaved':     { en: '💾 Saved: {name}',             th: '💾 บันทึกแล้ว: {name}',                       cn: '💾 已保存: {name}' },
+            'status.modeChanged':       { en: '⚙️ Mode: {mode}',              th: '⚙️ โหมด: {mode}',                             cn: '⚙️ 模式: {mode}' },
+            'status.stopped':           { en: 'Stopped',                       th: 'หยุดแล้ว',                                    cn: '已停止' },
+            'status.gistOpened':        { en: '🌐 Gist opened in browser',    th: '🌐 เปิด Gist ในเบราว์เซอร์แล้ว',             cn: '🌐 Gist 已在浏览器中打开' },
+            'status.gistFailed':        { en: '❌ Share failed: {msg}',        th: '❌ แชร์ล้มเหลว: {msg}',                      cn: '❌ 分享失败: {msg}' },
+            'status.nothingToShare':    { en: '⚠️ Nothing to share',          th: '⚠️ ไม่มีอะไรให้แชร์',                        cn: '⚠️ 没有内容可分享' },
+            'status.noCode':            { en: '⚠️ Please enter code first',   th: '⚠️ กรุณาใส่โค้ดก่อน',                        cn: '⚠️ 请先输入代码' },
+            'status.running':           { en: '⏳ Running…',                  th: '⏳ กำลังประมวลผล…',                           cn: '⏳ 运行中…' },
+            'status.success':           { en: '✅ Success{time}',              th: '✅ สำเร็จ{time}',                              cn: '✅ 成功{time}' },
+            'status.error':             { en: '❌ Error{time}',                th: '❌ เกิดข้อผิดพลาด{time}',                    cn: '❌ 错误{time}' },
+            'status.failed':            { en: '❌ Failed',                     th: '❌ ล้มเหลว',                                  cn: '❌ 失败' },
+            'output.placeholder':       { en: '// Results will appear here…', th: '// ผลลัพธ์จะแสดงที่นี่…',                   cn: '// 结果将显示在此处…' },
+            'output.waiting':           { en: 'Waiting for result…',           th: 'รอผลลัพธ์…',                                  cn: '等待结果…' },
+            'output.stopped':           { en: '⬛ Process stopped',             th: '⬛ หยุดการทำงานแล้ว',                         cn: '⬛ 进程已停止' },
+            'templates.empty':          { en: 'No templates yet. Save code from the editor to get started.', th: 'ยังไม่มี template บันทึก code จาก editor เพื่อเริ่มต้น', cn: '还没有模板。从编辑器保存代码以开始使用。' },
+            'templates.load':           { en: 'Load',                          th: 'โหลด',                                        cn: '加载' },
+            'tut.stepOf':               { en: 'Step {n} of {total}',          th: 'ขั้นที่ {n} จาก {total}',                    cn: '第 {n} 步，共 {total} 步' },
+            'tut.1.title':              { en: 'Write PHP Code',                th: 'เขียน PHP Code',                              cn: '编写 PHP 代码' },
+            'tut.1.desc':               { en: 'Type any PHP expression in the editor. Press ▶ Execute or Ctrl+Enter to run it via artisan tinker.', th: 'พิมพ์ PHP expression ในตัวแก้ไข กด ▶ Execute หรือ Ctrl+Enter เพื่อรันผ่าน artisan tinker', cn: '在编辑器中输入任意 PHP 表达式。按 ▶ 执行 或 Ctrl+Enter 通过 artisan tinker 运行。' },
+            'tut.2.title':              { en: 'Use Templates',                 th: 'ใช้ Templates',                               cn: '使用模板' },
+            'tut.2.desc':               { en: 'Pick a snippet from the template dropdown to insert common Laravel code instantly. Includes a Query Log capture template.', th: 'เลือก snippet จาก dropdown template เพื่อแทรก code Laravel ทั่วไปทันที รวมถึง template จับ Query Log', cn: '从模板下拉列表中选择代码片段，即时插入常用 Laravel 代码。包含查询日志捕获模板。' },
+            'tut.3.title':              { en: 'History & Pins',                th: 'History และ Pins',                            cn: '历史与固定' },
+            'tut.3.desc':               { en: 'Every successful run is saved in History. Search, select, and 📌 pin your most-used snippets so they never get evicted.', th: 'ทุกการรันที่สำเร็จจะถูกบันทึกใน History ค้นหา เลือก และ 📌 ปักหมุด snippets ที่ใช้บ่อยเพื่อไม่ให้ถูกลบ', cn: '每次成功运行都会保存在历史记录中。搜索、选择并 📌 固定最常用的代码片段，防止被清除。' },
+            'tut.4.title':              { en: 'Persistent REPL',               th: 'Persistent REPL',                             cn: '持久 REPL' },
+            'tut.4.desc':               { en: 'Toggle "Persistent REPL" to keep a single tinker process alive between runs — variables persist across executions.', th: 'เปิด "Persistent REPL" เพื่อให้ tinker process ทำงานต่อเนื่องระหว่างการรัน — ตัวแปรยังคงอยู่ข้ามการรัน', cn: '切换"持久 REPL"以在运行之间保持单个 tinker 进程存活——变量在执行之间持续存在。' },
+            'tut.5.title':              { en: 'Share & Test Runner',           th: 'แชร์และ Test Runner',                         cn: '分享与测试运行器' },
+            'tut.5.desc':               { en: 'After a run, click 🌐 Share to post your snippet as a GitHub Gist. Use 🧪 Test Runner panel to run php artisan test directly.', th: 'หลังจากรัน คลิก 🌐 Share เพื่อโพสต์ snippet เป็น GitHub Gist ใช้แผง 🧪 Test Runner เพื่อรัน php artisan test โดยตรง', cn: '运行后，点击 🌐 分享将代码片段发布为 GitHub Gist。使用 🧪 测试运行器面板直接运行 php artisan test。' }
+        };
+
+        var _lang = (function() { try { return localStorage.getItem('tinker_lang') || 'en'; } catch(e) { return 'en'; } })();
+
+        function t(key, vars) {
+            var s = (TRANSLATIONS[key] && (TRANSLATIONS[key][_lang] || TRANSLATIONS[key]['en'])) || key;
+            if (vars) Object.keys(vars).forEach(function(k) { s = s.split('{' + k + '}').join(vars[k]); });
+            return s;
+        }
+
+        function applyLang(lang) {
+            _lang = lang;
+            try { localStorage.setItem('tinker_lang', lang); } catch(e) {}
+            renderAllText();
+        }
+        function renderAllText() {
+            // Buttons
+            executeBtn.textContent = t('execute');
+            document.getElementById('runTestBtn').textContent = t('runTest');
+            document.getElementById('resetStatsBtn').textContent = t('resetStats');
+            resetReplBtn.title = t('tooltip.resetRepl');
+            resetReplBtn.textContent = t('resetRepl');
+            pinBtn.title = t('tooltip.pin');
+            document.getElementById('clearHistoryBtn').title = t('tooltip.clearHistory');
+            document.getElementById('saveTemplateBtnInline').title = t('tooltip.saveTemplate');
+            shareBtn.title = t('tooltip.share');
+            copyBtn.title = t('tooltip.copy');
+            document.getElementById('clearOutputBtn').title = t('tooltip.clearOutput');
+            stopBtn.title = t('tooltip.stop');
+            // Labels
+            document.getElementById('replLabel').textContent = t('persistentRepl.label');
+            document.getElementById('outputLabel').textContent = t('output.label');
+            document.getElementById('testRunnerLabel').textContent = t('panel.testRunner');
+            document.getElementById('statsLabel').textContent = t('panel.stats');
+            document.getElementById('templatesLabel').textContent = t('panel.templates');
+            // Placeholders
+            historySearch.placeholder = t('history.placeholder');
+            document.getElementById('testFilter').placeholder = t('testFilter.placeholder');
+            // History select default option
+            if (historySelect.options[0]) historySelect.options[0].textContent = t('history.select');
+            // Tutorial (update live if open)
+            var tutNext = document.getElementById('tutNext');
+            if (tutNext && TUTORIAL_STEPS) tutNext.textContent = (_tutStep < TUTORIAL_STEPS.length - 1) ? t('tutNext') : t('tutDone');
+            var tutSkipEl = document.getElementById('tutSkip');
+            if (tutSkipEl) tutSkipEl.textContent = t('tutSkip');
+            // Re-render templates list if panel is open
+            var templatesBody = document.getElementById('templatesPanelBody');
+            if (templatesBody && templatesBody.style.display !== 'none') { renderTemplatesList(); }
+            // Status (reset to ready on lang switch)
+            status.textContent = t('status.ready');
+        }
+        /* ── end i18n ──────────────────────────────────────────────── */
+
+        var langSelect = document.getElementById('langSelect');
+        langSelect.value = _lang;
+        langSelect.addEventListener('change', function() { applyLang(this.value); });
+
         var _lastRawOutput = '';
         var _viewMode = 'text';
         var _selectedHistoryCode = '';
+        renderAllText();
 
         // ── Analytics ─────────────────────────────────────────────
         function getAnalytics() {
@@ -918,12 +1041,12 @@ class TinkerSidebarProvider {
         replToggle.addEventListener('change', function() {
             vscode.postMessage({ command: 'setReplMode', enabled: this.checked });
             resetReplBtn.style.display = this.checked ? 'inline-block' : 'none';
-            status.textContent = this.checked ? '🔄 Persistent REPL mode' : 'พร้อมใช้งาน';
+            status.textContent = this.checked ? t('status.replOn') : t('status.ready');
         });
 
         resetReplBtn.addEventListener('click', function() {
             vscode.postMessage({ command: 'resetRepl' });
-            status.textContent = '↺ REPL session reset';
+            status.textContent = t('status.replReset');
         });
 
         var _envModes = ['local', 'sail', 'wsl'];
@@ -935,7 +1058,7 @@ class TinkerSidebarProvider {
             envBadge.textContent = next;
             envBadge.className = 'badge ' + next;
             vscode.postMessage({ command: 'setEnvType', envType: next });
-            status.textContent = '⚙️ Mode: ' + next;
+            status.textContent = t('status.modeChanged', { mode: next });
         });
 
         // ── Snippet Templates ──────────────────────────────────────
@@ -947,12 +1070,12 @@ class TinkerSidebarProvider {
             templateSelect.innerHTML = _projectTemplates.length === 0
                 ? '<option value="">🧩 No templates saved yet...</option>'
                 : '<option value="">🧩 Quick insert...</option>';
-            _projectTemplates.forEach(function(t) {
+            _projectTemplates.forEach(function(tpl) {
                 var opt = document.createElement('option');
-                opt.value = t.code;
-                opt.textContent = '📄 ' + t.name;
+                opt.value = tpl.code;
+                opt.textContent = '📄 ' + tpl.name;
                 opt.dataset.project = '1';
-                opt.dataset.tname = t.name;
+                opt.dataset.tname = tpl.name;
                 templateSelect.appendChild(opt);
             });
             _selectedProjectTemplateName = null;
@@ -964,26 +1087,26 @@ class TinkerSidebarProvider {
             var list = document.getElementById('templatesList');
             if (!list) return;
             if (_projectTemplates.length === 0) {
-                list.innerHTML = '<div style="color:var(--vscode-descriptionForeground);font-size:11px;padding:4px 0;">No templates yet. Save code from the editor to get started.</div>';
+                list.innerHTML = '<div style="color:var(--vscode-descriptionForeground);font-size:11px;padding:4px 0;">' + t('templates.empty') + '</div>';
                 return;
             }
-            list.innerHTML = _projectTemplates.map(function(t) {
-                var safeName = t.name.replace(/</g, '&lt;');
+            list.innerHTML = _projectTemplates.map(function(tpl) {
+                var safeName = tpl.name.replace(/</g, '&lt;');
                 return '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid var(--vscode-widget-border);">' +
                     '<span style="font-size:14px;">📄</span>' +
                     '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" title="' + safeName + '">' + safeName + '</span>' +
-                    '<button class="btn-small" onclick="loadTemplateByName(\'' + safeName + '\')" title="Load into editor">Load</button>' +
+                    '<button class="btn-small" onclick="loadTemplateByName(\'' + safeName + '\')" title="' + t('templates.load') + '">' + t('templates.load') + '</button>' +
                     '<button class="btn-small btn-danger" onclick="deleteTemplateByName(\'' + safeName + '\')" title="Delete template">🗑️</button>' +
                     '</div>';
             }).join('');
         }
 
         function loadTemplateByName(name) {
-            var t = _projectTemplates.find(function(t) { return t.name === name; });
-            if (!t) return;
-            editor.value = t.code;
+            var tpl = _projectTemplates.find(function(tpl) { return tpl.name === name; });
+            if (!tpl) return;
+            editor.value = tpl.code;
             editor.focus();
-            status.textContent = '📄 Template loaded: ' + name;
+            status.textContent = t('status.templateLoaded', { name: name });
         }
 
         function deleteTemplateByName(name) {
@@ -1010,7 +1133,7 @@ class TinkerSidebarProvider {
         function loadHistory(filter) {
             var hist = getHistory();
             var q = (filter || '').toLowerCase();
-            historySelect.innerHTML = '<option value="">📜 เลือก History...</option>';
+            historySelect.innerHTML = '<option value="">' + t('history.select') + '</option>';
             var pinned = hist.filter(function(h) { return h.pinned; });
             var unpinned = hist.filter(function(h) { return !h.pinned; });
             function addOpt(item) {
@@ -1056,11 +1179,11 @@ class TinkerSidebarProvider {
             if (!code) return;
             togglePin(code);
             _selectedHistoryCode = ''; historySelect.value = '';
-            status.textContent = '📌 Pin อัปเดตแล้ว';
+            status.textContent = t('status.pinUpdated');
         });
         document.getElementById('clearHistoryBtn').addEventListener('click', function() {
             localStorage.removeItem(HISTORY_KEY); loadHistory(); historySearch.value = '';
-            _selectedHistoryCode = ''; status.textContent = '✅ ล้าง History แล้ว';
+            _selectedHistoryCode = ''; status.textContent = t('status.historyCleared');
         });
 
         // ── Query Log Detection ────────────────────────────────────
@@ -1201,7 +1324,7 @@ class TinkerSidebarProvider {
         shareBtn.addEventListener('click', function() {
             var code = editor.value.trim();
             var out = _lastRawOutput;
-            if (!code && !out) { status.textContent = '⚠️ Nothing to share'; return; }
+            if (!code && !out) { status.textContent = t('status.nothingToShare'); return; }
             vscode.postMessage({ command: 'shareGist', code: code, output: out });
             trackEvent('shares');
         });
@@ -1210,7 +1333,7 @@ class TinkerSidebarProvider {
             output.textContent = ''; _lastRawOutput = ''; _viewMode = 'text';
             viewToggle.style.display = 'none'; cachedBadge.style.display = 'none';
             shareBtn.style.display = 'none';
-            status.textContent = 'พร้อมใช้งาน'; status.className = 'status';
+            status.textContent = t('status.ready'); status.className = 'status';
         });
 
         // ── Test Runner panel ──────────────────────────────────────
@@ -1238,14 +1361,14 @@ class TinkerSidebarProvider {
 
         executeBtn.addEventListener('click', function() {
             var code = editor.value.trim();
-            if (!code) { status.textContent = '⚠️ กรุณาใส่โค้ดก่อน'; return; }
+            if (!code) { status.textContent = t('status.noCode'); return; }
             setRunning(true);
             cachedBadge.style.display = 'none';
             shareBtn.style.display = 'none';
             viewToggle.style.display = 'none';
             status.className = 'status';
-            status.textContent = '⏳ กำลังประมวลผล...';
-            output.textContent = 'รอผลลัพธ์...';
+            status.textContent = t('status.running');
+            output.textContent = t('output.waiting');
             vscode.postMessage({ command: 'execute', code: code });
         });
 
@@ -1253,7 +1376,7 @@ class TinkerSidebarProvider {
 
         document.getElementById('saveTemplateBtnInline').addEventListener('click', function() {
             var code = editor.value.trim();
-            if (!code) { status.textContent = '⚠️ Editor is empty'; return; }
+            if (!code) { status.textContent = t('status.noCode'); return; }
             vscode.postMessage({ command: 'saveTemplate', code: code });
         });
 
@@ -1282,7 +1405,7 @@ class TinkerSidebarProvider {
                 cachedBadge.style.display = msg.cached ? 'inline' : 'none';
                 status.className = msg.error ? 'status error' : 'status success';
                 var timeLabel = msg.cached ? ' (cached)' : (msg.elapsed ? ' (' + msg.elapsed + 'ms)' : '');
-                status.textContent = (msg.error ? '❌ เกิดข้อผิดพลาด' : '✅ สำเร็จ') + timeLabel;
+                status.textContent = msg.error ? t('status.error', { time: timeLabel }) : t('status.success', { time: timeLabel });
                 if (!msg.error) saveHistory(editor.value.trim());
                 setRunning(false);
                 if (msg.cached) trackEvent('cacheHits');
@@ -1292,13 +1415,13 @@ class TinkerSidebarProvider {
             } else if (msg.type === 'error') {
                 output.textContent = msg.message; _lastRawOutput = msg.message;
                 viewToggle.style.display = 'none'; cachedBadge.style.display = 'none'; shareBtn.style.display = 'none';
-                status.className = 'status error'; status.textContent = '❌ ล้มเหลว';
+                status.className = 'status error'; status.textContent = t('status.failed');
                 setRunning(false);
 
             } else if (msg.type === 'stopped') {
-                output.textContent = '⬛ หยุดการทำงานแล้ว'; _lastRawOutput = '';
+                output.textContent = t('output.stopped'); _lastRawOutput = '';
                 viewToggle.style.display = 'none'; cachedBadge.style.display = 'none'; shareBtn.style.display = 'none';
-                status.className = 'status'; status.textContent = 'หยุดแล้ว';
+                status.className = 'status'; status.textContent = t('status.stopped');
                 setRunning(false);
 
             } else if (msg.type === 'envDetected') {
@@ -1307,7 +1430,7 @@ class TinkerSidebarProvider {
                 envBadge.title = 'Click to switch mode';
 
             } else if (msg.type === 'replReset') {
-                status.textContent = '↺ REPL reset — variables cleared';
+                status.textContent = t('status.replResetVars');
 
             } else if (msg.type === 'shareStatus') {
                 if (msg.status === 'posting') {
@@ -1315,11 +1438,11 @@ class TinkerSidebarProvider {
                 } else if (msg.status === 'done') {
                     shareBtn.textContent = '✅ Shared'; shareBtn.disabled = false;
                     setTimeout(function() { shareBtn.textContent = '🌐 Share'; }, 2500);
-                    status.textContent = '🌐 Gist opened in browser';
+                    status.textContent = t('status.gistOpened');
                 } else {
                     shareBtn.textContent = '❌ Failed'; shareBtn.disabled = false;
                     setTimeout(function() { shareBtn.textContent = '🌐 Share'; }, 2500);
-                    status.textContent = '❌ Share failed: ' + (msg.message || '');
+                    status.textContent = t('status.gistFailed', { msg: msg.message || '' });
                 }
 
             } else if (msg.type === 'testResult') {
@@ -1333,7 +1456,7 @@ class TinkerSidebarProvider {
             } else if (msg.type === 'templatesLoaded') {
                 renderTemplates(msg.templates);
             } else if (msg.type === 'templateSaved') {
-                status.textContent = '💾 Saved: ' + msg.name;
+                status.textContent = t('status.templateSaved', { name: msg.name });
                 status.className = 'status success';
             } else if (msg.type === 'templateSaveError') {
                 status.textContent = msg.message;
@@ -1343,11 +1466,11 @@ class TinkerSidebarProvider {
 
         // ── Interactive Tutorial ───────────────────────────────────
         var TUTORIAL_STEPS = [
-            { icon: '✍️', title: 'Write PHP Code', desc: 'Type any PHP expression in the editor. Press ▶ Execute or Ctrl+Enter to run it via artisan tinker.' },
-            { icon: '🧩', title: 'Use Templates', desc: 'Pick a snippet from the template dropdown to insert common Laravel code instantly. Includes a Query Log capture template.' },
-            { icon: '📜', title: 'History & Pins', desc: 'Every successful run is saved in History. Search, select, and 📌 pin your most-used snippets so they never get evicted.' },
-            { icon: '🔄', title: 'Persistent REPL', desc: 'Toggle "Persistent REPL" to keep a single tinker process alive between runs — variables persist across executions.' },
-            { icon: '🌐', title: 'Share & Test Runner', desc: 'After a run, click 🌐 Share to post your snippet as a GitHub Gist. Use 🧪 Test Runner panel to run php artisan test directly.' }
+            { icon: '✍️', n: 1 },
+            { icon: '🧩', n: 2 },
+            { icon: '📜', n: 3 },
+            { icon: '🔄', n: 4 },
+            { icon: '🌐', n: 5 }
         ];
         var _tutStep = 0;
 
@@ -1359,11 +1482,12 @@ class TinkerSidebarProvider {
 
         function renderTutStep() {
             var step = TUTORIAL_STEPS[_tutStep];
-            document.getElementById('tutStepNum').textContent = 'Step ' + (_tutStep + 1) + ' of ' + TUTORIAL_STEPS.length;
+            document.getElementById('tutStepNum').textContent = t('tut.stepOf', { n: _tutStep + 1, total: TUTORIAL_STEPS.length });
             document.getElementById('tutIcon').textContent = step.icon;
-            document.getElementById('tutTitle').textContent = step.title;
-            document.getElementById('tutDesc').textContent = step.desc;
-            document.getElementById('tutNext').textContent = _tutStep < TUTORIAL_STEPS.length - 1 ? 'Next →' : '✓ Done';
+            document.getElementById('tutTitle').textContent = t('tut.' + step.n + '.title');
+            document.getElementById('tutDesc').textContent = t('tut.' + step.n + '.desc');
+            document.getElementById('tutNext').textContent = _tutStep < TUTORIAL_STEPS.length - 1 ? t('tutNext') : t('tutDone');
+            document.getElementById('tutSkip').textContent = t('tutSkip');
             var dots = document.getElementById('tutDots');
             dots.innerHTML = '';
             TUTORIAL_STEPS.forEach(function(_, i) {
@@ -1426,12 +1550,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v3.3.0...');
+    console.log('[Artisan Tinker] Activating v3.4.1...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.3.0 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.4.1 ready');
 }
 
 function deactivate() {
