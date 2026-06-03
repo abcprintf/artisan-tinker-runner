@@ -904,6 +904,7 @@ class TinkerSidebarProvider {
             'tooltip.copy':             { en: 'Copy output',                   th: 'คัดลอกผลลัพธ์',                               cn: '复制输出' },
             'tooltip.clearOutput':      { en: 'Clear output',                  th: 'ล้างผลลัพธ์',                                 cn: '清除输出' },
             'tooltip.resetRepl':        { en: 'Reset REPL session',            th: 'รีเซ็ต REPL session',                         cn: '重置 REPL 会话' },
+            'tooltip.stop':             { en: 'Stop running process',          th: 'หยุดการทำงาน',                                cn: '停止运行' },
             'status.ready':             { en: 'Ready',                         th: 'พร้อมใช้งาน',                                 cn: '就绪' },
             'status.replOn':            { en: '🔄 Persistent REPL mode',      th: '🔄 โหมด REPL ต่อเนื่อง',                     cn: '🔄 持久 REPL 模式' },
             'status.replReset':         { en: '↺ REPL session reset',         th: '↺ รีเซ็ต REPL session',                      cn: '↺ REPL 会话已重置' },
@@ -963,6 +964,7 @@ class TinkerSidebarProvider {
             shareBtn.title = t('tooltip.share');
             copyBtn.title = t('tooltip.copy');
             document.getElementById('clearOutputBtn').title = t('tooltip.clearOutput');
+            stopBtn.title = t('tooltip.stop');
             // Labels
             document.getElementById('replLabel').textContent = t('persistentRepl.label');
             document.getElementById('outputLabel').textContent = t('output.label');
@@ -982,6 +984,8 @@ class TinkerSidebarProvider {
             // Re-render templates list if panel is open
             var templatesBody = document.getElementById('templatesPanelBody');
             if (templatesBody && templatesBody.style.display !== 'none') { renderTemplatesList(); }
+            // Status (reset to ready on lang switch)
+            status.textContent = t('status.ready');
         }
         /* ── end i18n ──────────────────────────────────────────────── */
 
