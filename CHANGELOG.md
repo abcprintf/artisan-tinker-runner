@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.0.2] - 2026-06-03
+
+### Fixed
+
+- แก้ปุ่ม "✨ AI" ไม่แสดง input panel เมื่อ editor ว่าง (ย้าย validation ไปที่ Submit)
+
+---
+
 ## [3.0.1] - 2026-06-03
 
 ### Added

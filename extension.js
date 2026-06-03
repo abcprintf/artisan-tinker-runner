@@ -72,7 +72,7 @@ class TinkerSidebarProvider {
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v3.0.1 | Ready';
+        webviewView.description = 'v3.0.2 | Ready';
         console.log('[Tinker] Webview resolved successfully');
 
         // Show tutorial on first run
@@ -1500,12 +1500,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v3.0.1...');
+    console.log('[Artisan Tinker] Activating v3.0.2...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.0.1 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.0.2 พร้อมใช้งาน');
 }
 
 function deactivate() {
