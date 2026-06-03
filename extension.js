@@ -724,11 +724,16 @@ class TinkerSidebarProvider {
     </div>
 
     <div class="container">
-        <div class="row" style="justify-content:space-between;">
+        <div class="row" style="justify-content:space-between;align-items:center;">
             <h3>🪄 Artisan Tinker</h3>
-            <div class="meta-bar">
+            <div class="meta-bar" style="display:flex;align-items:center;gap:6px;">
                 <span id="envBadge" class="badge local">local</span>
                 <span id="cachedBadge" class="badge cached" style="display:none;">cached</span>
+                <select id="langSelect" style="font-size:10px;padding:2px 4px;border-radius:3px;background:var(--vscode-dropdown-background,#3c3c3c);color:var(--vscode-dropdown-foreground,#cccccc);border:1px solid var(--vscode-dropdown-border,#3c3c3c);cursor:pointer;">
+                    <option value="en">EN</option>
+                    <option value="th">TH</option>
+                    <option value="cn">CN</option>
+                </select>
             </div>
         </div>
 
@@ -738,7 +743,7 @@ class TinkerSidebarProvider {
                 <input type="checkbox" id="replToggle">
                 <span class="slider"></span>
             </label>
-            <span>Persistent REPL</span>
+            <span id="replLabel">Persistent REPL</span>
             <button id="resetReplBtn" class="btn-small btn-secondary" style="display:none;" title="Reset REPL session">↺ Reset</button>
         </div>
 
@@ -767,7 +772,7 @@ class TinkerSidebarProvider {
 
         <!-- Output -->
         <div class="output-header" id="outputPanelHeader">
-            <span class="output-label">Output <span id="viewToggle" class="view-toggle" style="display:none;">[tree]</span><span class="output-chevron" id="outputChevron">▼</span></span>
+            <span class="output-label"><span id="outputLabel">Output</span> <span id="viewToggle" class="view-toggle" style="display:none;">[tree]</span><span class="output-chevron" id="outputChevron">▼</span></span>
             <div style="display:flex;gap:4px;">
                 <button id="shareBtn" class="btn-small btn-secondary" title="Share as GitHub Gist" style="display:none;">🌐 Share</button>
                 <button id="copyBtn" class="btn-small btn-secondary" title="Copy output">📋 Copy</button>
@@ -779,7 +784,7 @@ class TinkerSidebarProvider {
         <!-- Test Runner panel -->
         <div class="collapsible-panel">
             <div class="panel-header" id="testPanelHeader">
-                <span>🧪 Test Runner</span>
+                <span id="testRunnerLabel">🧪 Test Runner</span>
                 <span id="testToggleArrow">▸</span>
             </div>
             <div class="panel-body" id="testPanelBody">
@@ -792,7 +797,7 @@ class TinkerSidebarProvider {
         <!-- Analytics panel -->
         <div class="collapsible-panel">
             <div class="panel-header" id="analyticsHeader">
-                <span>📈 Usage Stats</span>
+                <span id="statsLabel">📈 Usage Stats</span>
                 <span id="analyticsArrow">▸</span>
             </div>
             <div class="analytics-body" id="analyticsBody">
@@ -810,7 +815,7 @@ class TinkerSidebarProvider {
         <!-- Saved Templates panel -->
         <div class="collapsible-panel">
             <div class="panel-header" id="templatesPanelHeader">
-                <span>📁 Saved Templates</span>
+                <span id="templatesLabel">📁 Saved Templates</span>
                 <span id="templatesArrow">▸</span>
             </div>
             <div class="panel-body" id="templatesPanelBody" style="display:none;">
