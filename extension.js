@@ -61,13 +61,15 @@ class TinkerSidebarProvider {
                 const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
                 if (!root) {
                     webviewView.webview.postMessage({ type: 'templateSaveError', message: '❌ No workspace open' });
-                } else if (!message.name || !message.code) {
-                    webviewView.webview.postMessage({ type: 'templateSaveError', message: '❌ Name or code is empty' });
+                } else if (!message.code) {
+                    webviewView.webview.postMessage({ type: 'templateSaveError', message: '❌ Editor is empty' });
                 } else {
+                    const name = await vscode.window.showInputBox({ prompt: 'Template name', placeHolder: 'e.g. find-active-users' });
+                    if (!name || !name.trim()) return;
                     try {
-                        this._saveProjectTemplate(root, message.name, message.code);
+                        this._saveProjectTemplate(root, name.trim(), message.code);
                         webviewView.webview.postMessage({ type: 'templatesLoaded', templates: this._loadProjectTemplates(root) });
-                        webviewView.webview.postMessage({ type: 'templateSaved', name: message.name });
+                        webviewView.webview.postMessage({ type: 'templateSaved', name: name.trim() });
                     } catch (e) {
                         console.error('[Tinker] saveTemplate error:', e);
                         webviewView.webview.postMessage({ type: 'templateSaveError', message: '❌ Save failed: ' + e.message });
@@ -76,14 +78,17 @@ class TinkerSidebarProvider {
             } else if (message.command === 'deleteTemplate') {
                 const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
                 if (root && message.name) {
+                    const pick = await vscode.window.showWarningMessage(`Delete template "${message.name}"?`, { modal: true }, 'Delete');
+                    if (pick !== 'Delete') return;
                     this._deleteProjectTemplate(root, message.name);
                     webviewView.webview.postMessage({ type: 'templatesLoaded', templates: this._loadProjectTemplates(root) });
+                    webviewView.webview.postMessage({ type: 'templateSaved', name: '🗑️ Deleted: ' + message.name });
                 }
             }
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v3.2.3 | Ready';
+        webviewView.description = 'v3.2.4 | Ready';
         console.log('[Tinker] Webview resolved successfully');
 
         // Send project templates on load
@@ -922,9 +927,7 @@ class TinkerSidebarProvider {
         }
 
         function deleteTemplateByName(name) {
-            if (!confirm('Delete template "' + name + '"?')) return;
             vscode.postMessage({ command: 'deleteTemplate', name: name });
-            status.textContent = '🗑️ Deleted: ' + name;
         }
 
         templateSelect.addEventListener('change', function() {
@@ -1191,10 +1194,7 @@ class TinkerSidebarProvider {
         document.getElementById('saveTemplateBtnInline').addEventListener('click', function() {
             var code = editor.value.trim();
             if (!code) { status.textContent = '⚠️ Editor is empty'; return; }
-            var name = prompt('Template name:');
-            if (!name || !name.trim()) return;
-            vscode.postMessage({ command: 'saveTemplate', name: name.trim(), code: code });
-            status.textContent = '💾 Saved: ' + name.trim();
+            vscode.postMessage({ command: 'saveTemplate', code: code });
         });
 
         document.addEventListener('keydown', function(e) {
@@ -1352,12 +1352,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v3.2.3...');
+    console.log('[Artisan Tinker] Activating v3.2.4...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.2.3 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.2.4 พร้อมใช้งาน');
 }
 
 function deactivate() {
