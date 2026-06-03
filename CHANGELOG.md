@@ -2,6 +2,12 @@
 
 ## [3.0.1] - 2026-06-03
 
+### Added
+
+- **✨ AI Suggest — @mention Model context** — คลิก "✨ AI" เพื่อเปิด prompt input พิมพ์คำถาม + `@ModelName` (เช่น `@User @Order`) เพื่อแนบ schema ของ Model นั้นๆ เข้าไปใน context ก่อนส่ง Copilot กด Ctrl+Enter หรือ Submit เพื่อรับ suggestion
+- **✨ AI Suggest — Smart Model filter** — auto-detect ชื่อ Model จาก code ที่พิมพ์ (เช่น `User::`, `new Order()`) แล้วโหลดเฉพาะไฟล์ที่เกี่ยวข้อง รองรับ project ที่มี Models มากกว่า 100 ไฟล์
+- **✨ AI Suggest — Project Model context** — อ่าน `app/Models/*.php` และดึง `$fillable`, `$casts`, `$table`, และ relations เพื่อให้ Copilot รู้จัก schema จริงของ project
+
 ### Fixed
 
 - ยกเว้นโฟลเดอร์ `.claude/` ออกจาก VSIX package
