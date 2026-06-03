@@ -1034,12 +1034,12 @@ class TinkerSidebarProvider {
         replToggle.addEventListener('change', function() {
             vscode.postMessage({ command: 'setReplMode', enabled: this.checked });
             resetReplBtn.style.display = this.checked ? 'inline-block' : 'none';
-            status.textContent = this.checked ? '🔄 Persistent REPL mode' : 'พร้อมใช้งาน';
+            status.textContent = this.checked ? t('status.replOn') : t('status.ready');
         });
 
         resetReplBtn.addEventListener('click', function() {
             vscode.postMessage({ command: 'resetRepl' });
-            status.textContent = '↺ REPL session reset';
+            status.textContent = t('status.replReset');
         });
 
         var _envModes = ['local', 'sail', 'wsl'];
@@ -1051,7 +1051,7 @@ class TinkerSidebarProvider {
             envBadge.textContent = next;
             envBadge.className = 'badge ' + next;
             vscode.postMessage({ command: 'setEnvType', envType: next });
-            status.textContent = '⚙️ Mode: ' + next;
+            status.textContent = t('status.modeChanged', { mode: next });
         });
 
         // ── Snippet Templates ──────────────────────────────────────
@@ -1099,7 +1099,7 @@ class TinkerSidebarProvider {
             if (!t) return;
             editor.value = t.code;
             editor.focus();
-            status.textContent = '📄 Template loaded: ' + name;
+            status.textContent = t('status.templateLoaded', { name: name });
         }
 
         function deleteTemplateByName(name) {
@@ -1126,7 +1126,7 @@ class TinkerSidebarProvider {
         function loadHistory(filter) {
             var hist = getHistory();
             var q = (filter || '').toLowerCase();
-            historySelect.innerHTML = '<option value="">📜 เลือก History...</option>';
+            historySelect.innerHTML = '<option value="">' + t('history.select') + '</option>';
             var pinned = hist.filter(function(h) { return h.pinned; });
             var unpinned = hist.filter(function(h) { return !h.pinned; });
             function addOpt(item) {
@@ -1172,11 +1172,11 @@ class TinkerSidebarProvider {
             if (!code) return;
             togglePin(code);
             _selectedHistoryCode = ''; historySelect.value = '';
-            status.textContent = '📌 Pin อัปเดตแล้ว';
+            status.textContent = t('status.pinUpdated');
         });
         document.getElementById('clearHistoryBtn').addEventListener('click', function() {
             localStorage.removeItem(HISTORY_KEY); loadHistory(); historySearch.value = '';
-            _selectedHistoryCode = ''; status.textContent = '✅ ล้าง History แล้ว';
+            _selectedHistoryCode = ''; status.textContent = t('status.historyCleared');
         });
 
         // ── Query Log Detection ────────────────────────────────────
@@ -1317,7 +1317,7 @@ class TinkerSidebarProvider {
         shareBtn.addEventListener('click', function() {
             var code = editor.value.trim();
             var out = _lastRawOutput;
-            if (!code && !out) { status.textContent = '⚠️ Nothing to share'; return; }
+            if (!code && !out) { status.textContent = t('status.nothingToShare'); return; }
             vscode.postMessage({ command: 'shareGist', code: code, output: out });
             trackEvent('shares');
         });
@@ -1326,7 +1326,7 @@ class TinkerSidebarProvider {
             output.textContent = ''; _lastRawOutput = ''; _viewMode = 'text';
             viewToggle.style.display = 'none'; cachedBadge.style.display = 'none';
             shareBtn.style.display = 'none';
-            status.textContent = 'พร้อมใช้งาน'; status.className = 'status';
+            status.textContent = t('status.ready'); status.className = 'status';
         });
 
         // ── Test Runner panel ──────────────────────────────────────
@@ -1354,13 +1354,13 @@ class TinkerSidebarProvider {
 
         executeBtn.addEventListener('click', function() {
             var code = editor.value.trim();
-            if (!code) { status.textContent = '⚠️ กรุณาใส่โค้ดก่อน'; return; }
+            if (!code) { status.textContent = t('status.noCode'); return; }
             setRunning(true);
             cachedBadge.style.display = 'none';
             shareBtn.style.display = 'none';
             viewToggle.style.display = 'none';
             status.className = 'status';
-            status.textContent = '⏳ กำลังประมวลผล...';
+            status.textContent = t('status.running');
             output.textContent = 'รอผลลัพธ์...';
             vscode.postMessage({ command: 'execute', code: code });
         });
@@ -1369,7 +1369,7 @@ class TinkerSidebarProvider {
 
         document.getElementById('saveTemplateBtnInline').addEventListener('click', function() {
             var code = editor.value.trim();
-            if (!code) { status.textContent = '⚠️ Editor is empty'; return; }
+            if (!code) { status.textContent = t('status.noCode'); return; }
             vscode.postMessage({ command: 'saveTemplate', code: code });
         });
 
@@ -1398,7 +1398,7 @@ class TinkerSidebarProvider {
                 cachedBadge.style.display = msg.cached ? 'inline' : 'none';
                 status.className = msg.error ? 'status error' : 'status success';
                 var timeLabel = msg.cached ? ' (cached)' : (msg.elapsed ? ' (' + msg.elapsed + 'ms)' : '');
-                status.textContent = (msg.error ? '❌ เกิดข้อผิดพลาด' : '✅ สำเร็จ') + timeLabel;
+                status.textContent = msg.error ? t('status.error', { time: timeLabel }) : t('status.success', { time: timeLabel });
                 if (!msg.error) saveHistory(editor.value.trim());
                 setRunning(false);
                 if (msg.cached) trackEvent('cacheHits');
@@ -1408,13 +1408,13 @@ class TinkerSidebarProvider {
             } else if (msg.type === 'error') {
                 output.textContent = msg.message; _lastRawOutput = msg.message;
                 viewToggle.style.display = 'none'; cachedBadge.style.display = 'none'; shareBtn.style.display = 'none';
-                status.className = 'status error'; status.textContent = '❌ ล้มเหลว';
+                status.className = 'status error'; status.textContent = t('status.failed');
                 setRunning(false);
 
             } else if (msg.type === 'stopped') {
                 output.textContent = '⬛ หยุดการทำงานแล้ว'; _lastRawOutput = '';
                 viewToggle.style.display = 'none'; cachedBadge.style.display = 'none'; shareBtn.style.display = 'none';
-                status.className = 'status'; status.textContent = 'หยุดแล้ว';
+                status.className = 'status'; status.textContent = t('status.stopped');
                 setRunning(false);
 
             } else if (msg.type === 'envDetected') {
@@ -1423,7 +1423,7 @@ class TinkerSidebarProvider {
                 envBadge.title = 'Click to switch mode';
 
             } else if (msg.type === 'replReset') {
-                status.textContent = '↺ REPL reset — variables cleared';
+                status.textContent = t('status.replResetVars');
 
             } else if (msg.type === 'shareStatus') {
                 if (msg.status === 'posting') {
@@ -1431,11 +1431,11 @@ class TinkerSidebarProvider {
                 } else if (msg.status === 'done') {
                     shareBtn.textContent = '✅ Shared'; shareBtn.disabled = false;
                     setTimeout(function() { shareBtn.textContent = '🌐 Share'; }, 2500);
-                    status.textContent = '🌐 Gist opened in browser';
+                    status.textContent = t('status.gistOpened');
                 } else {
                     shareBtn.textContent = '❌ Failed'; shareBtn.disabled = false;
                     setTimeout(function() { shareBtn.textContent = '🌐 Share'; }, 2500);
-                    status.textContent = '❌ Share failed: ' + (msg.message || '');
+                    status.textContent = t('status.gistFailed', { msg: msg.message || '' });
                 }
 
             } else if (msg.type === 'testResult') {
@@ -1449,7 +1449,7 @@ class TinkerSidebarProvider {
             } else if (msg.type === 'templatesLoaded') {
                 renderTemplates(msg.templates);
             } else if (msg.type === 'templateSaved') {
-                status.textContent = '💾 Saved: ' + msg.name;
+                status.textContent = t('status.templateSaved', { name: msg.name });
                 status.className = 'status success';
             } else if (msg.type === 'templateSaveError') {
                 status.textContent = msg.message;
