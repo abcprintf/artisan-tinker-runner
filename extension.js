@@ -88,7 +88,7 @@ class TinkerSidebarProvider {
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v3.2.4 | Ready';
+        webviewView.description = 'v3.3.0 | Ready';
         console.log('[Tinker] Webview resolved successfully');
 
         // Send project templates on load
@@ -517,11 +517,37 @@ class TinkerSidebarProvider {
     // ── Webview HTML ─────────────────────────────────────────────
 
     getHtmlForWebview() {
+        const webview = this._webview;
+        const cmBase = vscode.Uri.joinPath(this.extensionUri, 'resources', 'codemirror');
+        const uris = {
+            cmCss:          webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'codemirror.min.css')).toString(),
+            monokaiCss:     webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'monokai.min.css')).toString(),
+            cmJs:           webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'codemirror.min.js')).toString(),
+            xmlJs:          webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'xml.min.js')).toString(),
+            jsJs:           webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'javascript.min.js')).toString(),
+            cssJs:          webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'css.min.js')).toString(),
+            clikeJs:        webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'clike.min.js')).toString(),
+            htmlmixedJs:    webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'htmlmixed.min.js')).toString(),
+            phpJs:          webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'php.min.js')).toString(),
+            matchJs:        webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'matchbrackets.min.js')).toString(),
+            closeJs:        webview.asWebviewUri(vscode.Uri.joinPath(cmBase, 'closebrackets.min.js')).toString(),
+        };
         return String.raw`<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline';">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src __CSP_SOURCE__ 'unsafe-inline'; style-src __CSP_SOURCE__ 'unsafe-inline'; font-src __CSP_SOURCE__;">
+    <link rel="stylesheet" href="__CM_CSS_URI__">
+    <link rel="stylesheet" href="__MONOKAI_CSS_URI__">
+    <script src="__CM_JS_URI__"></script>
+    <script src="__XML_JS_URI__"></script>
+    <script src="__JS_JS_URI__"></script>
+    <script src="__CSS_JS_URI__"></script>
+    <script src="__CLIKE_JS_URI__"></script>
+    <script src="__HTMLMIXED_JS_URI__"></script>
+    <script src="__PHP_JS_URI__"></script>
+    <script src="__MATCH_JS_URI__"></script>
+    <script src="__CLOSE_JS_URI__"></script>
     <style>
         :root {
             --bg: var(--vscode-input-background, #1e1e1e);
@@ -551,6 +577,10 @@ class TinkerSidebarProvider {
             padding: 6px; width: 100%; box-sizing: border-box;
         }
         textarea { min-height: 120px; resize: vertical; line-height: 1.5; }
+        #editorContainer { min-height: 120px; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; }
+        #editorContainer .CodeMirror { height: auto; min-height: 120px; font-size: 12px; font-family: var(--vscode-editor-font-family, 'Cascadia Code', Consolas, monospace); background: var(--bg); color: var(--fg); }
+        #editorContainer .CodeMirror-scroll { min-height: 120px; max-height: 400px; }
+        #editorContainer .CodeMirror-gutters { background: var(--vscode-editorGutter-background, #1e1e1e); border-right: 1px solid var(--border); }
         button { background: var(--btn); color: var(--btn-fg); border: none; cursor: pointer; font-weight: 500; }
         button:hover { background: var(--btn-hover); }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
@@ -724,7 +754,7 @@ class TinkerSidebarProvider {
         </div>
 
         <!-- Editor -->
-        <textarea id="editor" placeholder="พิมพ์ PHP code ที่นี่...\nรองรับหลายบรรทัด เช่น:\n$users = User::all();\n$users->count();" spellcheck="false"></textarea>
+        <div id="editorContainer"></div>
 
         <!-- Actions -->
         <div class="row">
@@ -795,7 +825,37 @@ class TinkerSidebarProvider {
         var ANALYTICS_KEY = 'tinker_analytics_v1';
         var MAX_HISTORY = 15;
 
-        var editor = document.getElementById('editor');
+        var cmEditor = CodeMirror(document.getElementById('editorContainer'), {
+            value: '',
+            mode: 'text/x-php',
+            theme: 'monokai',
+            lineNumbers: true,
+            matchBrackets: true,
+            autoCloseBrackets: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false,
+            lineWrapping: true,
+            extraKeys: {
+                'Tab': function(cm) { cm.replaceSelection('    '); },
+                'Ctrl-Enter': function() { if (!executeBtn.disabled) executeBtn.click(); },
+                'Cmd-Enter': function() { if (!executeBtn.disabled) executeBtn.click(); }
+            }
+        });
+        // Compat shim — all existing code uses editor.value / editor.focus()
+        var editor = {
+            get value() { return cmEditor.getValue(); },
+            set value(v) { cmEditor.setValue(v || ''); },
+            focus() { cmEditor.focus(); },
+            get selectionStart() {
+                var cursor = cmEditor.getCursor();
+                var lines = cmEditor.getValue().split('\n');
+                var pos = 0;
+                for (var i = 0; i < cursor.line; i++) pos += lines[i].length + 1;
+                return pos + cursor.ch;
+            },
+            get selectionEnd() { return this.selectionStart; }
+        };
         var executeBtn = document.getElementById('executeBtn');
         var stopBtn = document.getElementById('stopBtn');
         var output = document.getElementById('output');
@@ -1346,18 +1406,32 @@ class TinkerSidebarProvider {
         vscode.postMessage({ command: 'loadTemplates' });
         vscode.postMessage({ command: 'debug', text: 'Webview JS initialized successfully' });
     </script>
+
 </body>
-</html>`.replace(/\${VS_CODE_ENV}/g, process.env.NODE_ENV || 'production');
+</html>`
+            .replace(/\${VS_CODE_ENV}/g, process.env.NODE_ENV || 'production')
+            .replace(/__CSP_SOURCE__/g, webview.cspSource)
+            .replace('__CM_CSS_URI__', uris.cmCss)
+            .replace('__MONOKAI_CSS_URI__', uris.monokaiCss)
+            .replace('__CM_JS_URI__', uris.cmJs)
+            .replace('__XML_JS_URI__', uris.xmlJs)
+            .replace('__JS_JS_URI__', uris.jsJs)
+            .replace('__CSS_JS_URI__', uris.cssJs)
+            .replace('__CLIKE_JS_URI__', uris.clikeJs)
+            .replace('__HTMLMIXED_JS_URI__', uris.htmlmixedJs)
+            .replace('__PHP_JS_URI__', uris.phpJs)
+            .replace('__MATCH_JS_URI__', uris.matchJs)
+            .replace('__CLOSE_JS_URI__', uris.closeJs);
     }
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v3.2.4...');
+    console.log('[Artisan Tinker] Activating v3.3.0...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.2.4 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.3.0 พร้อมใช้งาน');
 }
 
 function deactivate() {
