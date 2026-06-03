@@ -480,7 +480,7 @@ class TinkerSidebarProvider {
         return [...found].filter(n => !exclude.has(n));
     }
 
-    _scanProjectModels(rootPath, code) {
+    _scanProjectModels(rootPath, code, explicitModels) {
         const modelsDir = path.join(rootPath, 'app', 'Models');
         if (!fs.existsSync(modelsDir)) return '';
 
@@ -489,11 +489,13 @@ class TinkerSidebarProvider {
         try { allFiles = fs.readdirSync(modelsDir).filter(f => f.endsWith('.php')); }
         catch (e) { return ''; }
 
-        // Smart filter: only load models referenced in the code
-        const detected = code ? this._detectModelNames(code) : [];
-        const files = detected.length > 0
-            ? allFiles.filter(f => detected.includes(f.replace('.php', '')))
-            : allFiles.slice(0, 10); // fallback: first 10
+        // Priority: explicit @mentions > smart-detect from code > skip
+        const wanted = explicitModels && explicitModels.length > 0
+            ? explicitModels
+            : (code ? this._detectModelNames(code) : []);
+        const files = wanted.length > 0
+            ? allFiles.filter(f => wanted.includes(f.replace('.php', '')))
+            : [];
 
         for (const file of files.slice(0, 15)) { // hard cap at 15
             const name = file.replace('.php', '');
@@ -552,14 +554,15 @@ class TinkerSidebarProvider {
         }
 
         const workspace = vscode.workspace.workspaceFolders?.[0];
-        const modelContext = (message.useModels !== false && workspace)
-            ? this._scanProjectModels(workspace.uri.fsPath, code)
+        const modelContext = (workspace && message.mentionedModels && message.mentionedModels.length > 0)
+            ? this._scanProjectModels(workspace.uri.fsPath, null, message.mentionedModels)
             : '';
 
+        const userInstruction = message.prompt && message.prompt.replace(/@[A-Z][A-Za-z]+/g, '').trim();
         const prompt = [
             'You are a Laravel Tinker expert.',
             modelContext || '',
-            'Given this PHP snippet, suggest an improved or extended version.',
+            userInstruction || 'Given this PHP snippet, suggest an improved or extended version.',
             'Return only raw PHP code with no markdown fences or explanation:\n',
             code
         ].filter(Boolean).join('\n');
@@ -829,13 +832,18 @@ class TinkerSidebarProvider {
             <button id="stopBtn" class="btn-danger btn-small" style="display:none;" title="หยุดการทำงาน">■ Stop</button>
             <button id="aiSuggestBtn" class="btn-secondary btn-small" title="Get AI code suggestion via GitHub Copilot">✨ AI</button>
         </div>
-        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;opacity:0.8;">
-            <input type="checkbox" id="aiUseModels" checked style="margin:0;">
-            <label for="aiUseModels">ใช้ข้อมูล Models ของ project</label>
+
+        <!-- AI: input step -->
+        <div id="aiInputPanel" style="display:none;margin-top:6px;">
+            <textarea id="aiPromptInput" rows="2" placeholder="Ask AI... พิมพ์ @ModelName เพื่อแนบ Model context เช่น @User @Order" style="width:100%;box-sizing:border-box;font-size:12px;resize:vertical;" spellcheck="false"></textarea>
+            <div style="display:flex;gap:4px;margin-top:4px;">
+                <button id="aiSubmitBtn" class="btn-small" style="flex:1;">✨ Submit</button>
+                <button id="aiCancelBtn" class="btn-secondary btn-small">✕</button>
+            </div>
         </div>
 
-        <!-- AI Suggestion panel -->
-        <div id="aiPanel" style="display:none;margin-top:6px;">
+        <!-- AI: output step -->
+        <div id="aiOutputPanel" style="display:none;margin-top:6px;">
             <div id="aiOutput" style="font-family:var(--vscode-editor-font-family,monospace);white-space:pre-wrap;font-size:12px;padding:8px;border:1px solid var(--vscode-focusBorder);border-radius:3px;max-height:180px;overflow:auto;background:var(--vscode-editor-background);"></div>
             <div style="display:flex;gap:4px;margin-top:4px;">
                 <button id="aiAcceptBtn" class="btn-small">✓ Accept</button>
@@ -1328,7 +1336,7 @@ class TinkerSidebarProvider {
                 aiDismissBtn.style.display = 'inline-block';
                 status.textContent = '✨ AI suggestion ready';
             } else if (msg.type === 'aiError') {
-                aiPanel.style.display = 'none';
+                aiReset();
                 status.classList.add('error');
                 status.textContent = '❌ ' + msg.text;
             } else if (msg.type === 'snippetsUpdated') {
@@ -1384,34 +1392,57 @@ class TinkerSidebarProvider {
         }
 
         // ── AI Suggest ─────────────────────────────────────────────
-        var aiPanel = document.getElementById('aiPanel');
+        var aiInputPanel = document.getElementById('aiInputPanel');
+        var aiOutputPanel = document.getElementById('aiOutputPanel');
         var aiOutput = document.getElementById('aiOutput');
         var aiSuggestBtn = document.getElementById('aiSuggestBtn');
+        var aiPromptInput = document.getElementById('aiPromptInput');
         var aiAcceptBtn = document.getElementById('aiAcceptBtn');
         var aiDismissBtn = document.getElementById('aiDismissBtn');
 
-        aiSuggestBtn.addEventListener('click', function() {
-            var code = editor.value.trim();
-            if (!code) { status.textContent = '⚠️ Write some PHP code first.'; return; }
+        function aiReset() {
+            aiInputPanel.style.display = 'none';
+            aiOutputPanel.style.display = 'none';
             aiOutput.textContent = '';
-            aiPanel.style.display = 'block';
-            aiAcceptBtn.style.display = 'none';
-            aiDismissBtn.style.display = 'none';
-            status.textContent = '🤖 AI กำลังคิด...';
-            var useModels = document.getElementById('aiUseModels').checked;
-            vscode.postMessage({ command: 'aiSuggest', code: code, useModels: useModels });
+            aiPromptInput.value = '';
+        }
+
+        aiSuggestBtn.addEventListener('click', function() {
+            if (!editor.value.trim()) { status.textContent = '⚠️ Write some PHP code first.'; return; }
+            aiReset();
+            aiInputPanel.style.display = 'block';
+            setTimeout(function() { aiPromptInput.focus(); }, 50);
         });
+
+        document.getElementById('aiSubmitBtn').addEventListener('click', function() {
+            var code = editor.value.trim();
+            if (!code) { return; }
+            var promptText = aiPromptInput.value.trim();
+            var mentions = [...promptText.matchAll(/@([A-Z][A-Za-z]+)/g)].map(function(m) { return m[1]; });
+            aiInputPanel.style.display = 'none';
+            aiOutputPanel.style.display = 'block';
+            aiOutput.textContent = '';
+            status.textContent = '🤖 AI กำลังคิด...';
+            vscode.postMessage({ command: 'aiSuggest', code: code, prompt: promptText, mentionedModels: mentions });
+        });
+
+        aiPromptInput.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                document.getElementById('aiSubmitBtn').click();
+            }
+            if (e.key === 'Escape') { aiReset(); }
+        });
+
+        document.getElementById('aiCancelBtn').addEventListener('click', aiReset);
 
         aiAcceptBtn.addEventListener('click', function() {
             editor.value = aiOutput.textContent;
-            aiPanel.style.display = 'none';
+            aiReset();
             status.textContent = '✅ AI suggestion accepted';
         });
 
-        aiDismissBtn.addEventListener('click', function() {
-            aiPanel.style.display = 'none';
-            aiOutput.textContent = '';
-        });
+        aiDismissBtn.addEventListener('click', aiReset);
 
         // ── Project Snippets ───────────────────────────────────────
         var _snippets = [];
