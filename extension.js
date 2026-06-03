@@ -88,7 +88,7 @@ class TinkerSidebarProvider {
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v3.3.0 | Ready';
+        webviewView.description = 'v3.4.0 | Ready';
         console.log('[Tinker] Webview resolved successfully');
 
         // Send project templates on load
@@ -779,7 +779,7 @@ class TinkerSidebarProvider {
                 <button id="clearOutputBtn" class="btn-small btn-secondary" title="Clear output">✕ Clear</button>
             </div>
         </div>
-        <div class="output" id="output">// ผลลัพธ์จะแสดงที่นี่...</div>
+        <div class="output" id="output">// Results will appear here…</div>
 
         <!-- Test Runner panel -->
         <div class="collapsible-panel">
@@ -923,6 +923,9 @@ class TinkerSidebarProvider {
             'status.success':           { en: '✅ Success{time}',              th: '✅ สำเร็จ{time}',                              cn: '✅ 成功{time}' },
             'status.error':             { en: '❌ Error{time}',                th: '❌ เกิดข้อผิดพลาด{time}',                    cn: '❌ 错误{time}' },
             'status.failed':            { en: '❌ Failed',                     th: '❌ ล้มเหลว',                                  cn: '❌ 失败' },
+            'output.placeholder':       { en: '// Results will appear here…', th: '// ผลลัพธ์จะแสดงที่นี่…',                   cn: '// 结果将显示在此处…' },
+            'output.waiting':           { en: 'Waiting for result…',           th: 'รอผลลัพธ์…',                                  cn: '等待结果…' },
+            'output.stopped':           { en: '⬛ Process stopped',             th: '⬛ หยุดการทำงานแล้ว',                         cn: '⬛ 进程已停止' },
             'templates.empty':          { en: 'No templates yet. Save code from the editor to get started.', th: 'ยังไม่มี template บันทึก code จาก editor เพื่อเริ่มต้น', cn: '还没有模板。从编辑器保存代码以开始使用。' },
             'templates.load':           { en: 'Load',                          th: 'โหลด',                                        cn: '加载' },
             'tut.stepOf':               { en: 'Step {n} of {total}',          th: 'ขั้นที่ {n} จาก {total}',                    cn: '第 {n} 步，共 {total} 步' },
@@ -1365,7 +1368,7 @@ class TinkerSidebarProvider {
             viewToggle.style.display = 'none';
             status.className = 'status';
             status.textContent = t('status.running');
-            output.textContent = 'รอผลลัพธ์...';
+            output.textContent = t('output.waiting');
             vscode.postMessage({ command: 'execute', code: code });
         });
 
@@ -1416,7 +1419,7 @@ class TinkerSidebarProvider {
                 setRunning(false);
 
             } else if (msg.type === 'stopped') {
-                output.textContent = '⬛ หยุดการทำงานแล้ว'; _lastRawOutput = '';
+                output.textContent = t('output.stopped'); _lastRawOutput = '';
                 viewToggle.style.display = 'none'; cachedBadge.style.display = 'none'; shareBtn.style.display = 'none';
                 status.className = 'status'; status.textContent = t('status.stopped');
                 setRunning(false);
@@ -1547,12 +1550,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v3.3.0...');
+    console.log('[Artisan Tinker] Activating v3.4.0...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.3.0 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.4.0 ready');
 }
 
 function deactivate() {
