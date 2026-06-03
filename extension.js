@@ -17,6 +17,7 @@ class TinkerSidebarProvider {
         this._cache = new Map();       // hash -> { output, timestamp }
         this._phpPath = 'php';
         this._envType = 'local';       // 'local' | 'sail' | 'wsl'
+        this._envOverride = null;      // manual override from webview
         this._replMode = false;
     }
 
@@ -37,6 +38,10 @@ class TinkerSidebarProvider {
                 this._replMode = message.enabled;
                 if (!this._replMode) { this._killReplProc(); }
                 console.log('[Tinker] REPL mode:', this._replMode);
+            } else if (message.command === 'setEnvType') {
+                this._envOverride = message.envType;
+                this._envType = message.envType;
+                this._killReplProc(); // restart REPL with new env
             } else if (message.command === 'resetRepl') {
                 this._killReplProc();
                 webviewView.webview.postMessage({ type: 'replReset' });
@@ -250,10 +255,11 @@ class TinkerSidebarProvider {
             return;
         }
 
-        const [phpPath, envType] = await Promise.all([
+        const [phpPath, detectedEnv] = await Promise.all([
             this.detectPhpPath(rootPath),
-            this.detectEnv(rootPath)
+            this._envOverride ? Promise.resolve(this._envOverride) : this.detectEnv(rootPath)
         ]);
+        const envType = detectedEnv;
         this._phpPath = phpPath;
         this._envType = envType;
 
@@ -515,6 +521,7 @@ class TinkerSidebarProvider {
         .badge.sail { background: #1d6fa5; color: #fff; }
         .badge.wsl  { background: #5a2ca0; color: #fff; }
         .badge.local { background: #2d7a2d; color: #fff; }
+        #envBadge:hover { opacity: 0.8; }
         .badge.cached { background: #8a6914; color: #fff; }
         .badge.repl { background: #7a2d7a; color: #fff; }
 
@@ -806,6 +813,18 @@ class TinkerSidebarProvider {
         resetReplBtn.addEventListener('click', function() {
             vscode.postMessage({ command: 'resetRepl' });
             status.textContent = '↺ REPL session reset';
+        });
+
+        var _envModes = ['local', 'sail', 'wsl'];
+        envBadge.style.cursor = 'pointer';
+        envBadge.title = 'Click to switch mode';
+        envBadge.addEventListener('click', function() {
+            var cur = _envModes.indexOf(envBadge.textContent);
+            var next = _envModes[(cur + 1) % _envModes.length];
+            envBadge.textContent = next;
+            envBadge.className = 'badge ' + next;
+            vscode.postMessage({ command: 'setEnvType', envType: next });
+            status.textContent = '⚙️ Mode: ' + next;
         });
 
         // ── Snippet Templates ──────────────────────────────────────
@@ -1117,6 +1136,7 @@ class TinkerSidebarProvider {
             } else if (msg.type === 'envDetected') {
                 envBadge.textContent = msg.envType;
                 envBadge.className = 'badge ' + msg.envType;
+                envBadge.title = 'Click to switch mode';
 
             } else if (msg.type === 'replReset') {
                 status.textContent = '↺ REPL reset — variables cleared';

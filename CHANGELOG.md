@@ -1,5 +1,14 @@
 # Changelog
 
+## [2.9.1] - 2026-06-03
+
+### Fixed
+
+- **Activity bar icon** — Replaced complex multi-color SVG (gradients/filters) with monochromatic `currentColor` SVG so VS Code can theme it correctly
+- **Mode switcher** — `local`/`sail`/`wsl` badge is now clickable to manually override auto-detected environment; cycles through modes and persists until next reload
+
+---
+
 ## [2.9.0] - 2026-06-03
 
 ### Changed
