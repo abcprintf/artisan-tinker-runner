@@ -1,5 +1,19 @@
 # Changelog
 
+## [3.0.0] - 2026-06-03
+
+### Added
+
+- **✨ AI Code Suggestions** — New "✨ AI" button next to Execute. Uses the VS Code Language Model API (GitHub Copilot) to stream PHP/Laravel code suggestions. Click Accept to insert the suggestion into the editor, or Dismiss to close the panel. Requires GitHub Copilot extension and VS Code 1.90+.
+- **📁 Project Snippets Library** — Save named PHP snippets scoped to the current workspace (stored in VS Code `workspaceState`, isolated per project). New collapsible "Project Snippets" panel with Load, Save, and Delete actions — separate from the global run history.
+
+### Changed
+
+- Minimum VS Code version bumped to `1.90.0` (required for Language Model API)
+
+---
+
+
 ## [2.9.1] - 2026-06-03
 
 ### Fixed

@@ -2,7 +2,7 @@
   "name": "artisan-tinker-runner",
   "displayName": "Artisan Tinker Runner",
   "description": "Laravel Artisan Tinker sidebar with Query Log Viewer, Gist sharing, Test Runner, Analytics & Interactive Tutorial",
-  "version": "2.9.1",
+  "version": "3.0.0",
   "publisher": "workitdee",
   "author": {
     "name": "abcprintf",
@@ -14,7 +14,7 @@
   "bugs": { "url": "https://github.com/abcprintf/artisan-tinker-runner/issues" },
   "keywords": ["laravel", "tinker", "php", "artisan", "repl", "sidebar"],
   "icon": "icon.png",
-  "engines": { "vscode": "^1.85.0" },
+  "engines": { "vscode": "^1.90.0" },
   "categories": ["Other"],
   "activationEvents": ["workspaceContains:artisan"],
   "main": "./extension.js",

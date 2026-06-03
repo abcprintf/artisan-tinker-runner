@@ -53,11 +53,26 @@ class TinkerSidebarProvider {
                 this._context.globalState.update('tutorialSeen_v1', true);
             } else if (message.command === 'debug') {
                 console.log('[Tinker Webview]', message.text);
+            } else if (message.command === 'aiSuggest') {
+                await this._handleAiSuggest(message.code, webviewView.webview);
+            } else if (message.command === 'saveSnippet') {
+                if (message.name && message.code) {
+                    const snips = this._context.workspaceState.get('tinkerSnippets', []);
+                    snips.push({ id: Date.now().toString(), name: message.name, code: message.code, createdAt: new Date().toISOString() });
+                    await this._context.workspaceState.update('tinkerSnippets', snips);
+                    webviewView.webview.postMessage({ type: 'snippetsUpdated', snippets: snips });
+                }
+            } else if (message.command === 'deleteSnippet') {
+                const snips = this._context.workspaceState.get('tinkerSnippets', []).filter(s => s.id !== message.id);
+                await this._context.workspaceState.update('tinkerSnippets', snips);
+                webviewView.webview.postMessage({ type: 'snippetsUpdated', snippets: snips });
+            } else if (message.command === 'getSnippets') {
+                webviewView.webview.postMessage({ type: 'snippetsUpdated', snippets: this._context.workspaceState.get('tinkerSnippets', []) });
             }
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v2.8.0 | Ready';
+        webviewView.description = 'v3.0.0 | Ready';
         console.log('[Tinker] Webview resolved successfully');
 
         // Show tutorial on first run
@@ -451,6 +466,42 @@ class TinkerSidebarProvider {
         });
     }
 
+    async _handleAiSuggest(code, webview) {
+        if (!vscode.lm) {
+            webview.postMessage({ type: 'aiError', text: 'Language Model API not available (requires VS Code 1.90+).' });
+            return;
+        }
+        let models;
+        try {
+            models = await vscode.lm.selectChatModels({ vendor: 'copilot' });
+        } catch (e) {
+            webview.postMessage({ type: 'aiError', text: 'Could not access Copilot: ' + e.message });
+            return;
+        }
+        if (!models || models.length === 0) {
+            webview.postMessage({ type: 'aiError', text: 'GitHub Copilot not available. Please install and sign in to GitHub Copilot.' });
+            return;
+        }
+        const model = models[0];
+        const msgs = [
+            vscode.LanguageModelChatMessage.User(
+                'You are a Laravel Tinker expert. Given this PHP snippet, suggest an improved or extended version. Return only raw PHP code with no markdown fences or explanation:\n\n' + code
+            )
+        ];
+        const cts = new vscode.CancellationTokenSource();
+        try {
+            const req = await model.sendRequest(msgs, {}, cts.token);
+            for await (const chunk of req.text) {
+                webview.postMessage({ type: 'aiChunk', text: chunk });
+            }
+            webview.postMessage({ type: 'aiDone' });
+        } catch (e) {
+            webview.postMessage({ type: 'aiError', text: 'AI request failed: ' + e.message });
+        } finally {
+            cts.dispose();
+        }
+    }
+
     // ── Webview HTML ─────────────────────────────────────────────
 
     getHtmlForWebview() {
@@ -699,6 +750,16 @@ class TinkerSidebarProvider {
         <div class="row">
             <button id="executeBtn" style="flex:1;">▶ Execute in Tinker</button>
             <button id="stopBtn" class="btn-danger btn-small" style="display:none;" title="หยุดการทำงาน">■ Stop</button>
+            <button id="aiSuggestBtn" class="btn-secondary btn-small" title="Get AI code suggestion via GitHub Copilot">✨ AI</button>
+        </div>
+
+        <!-- AI Suggestion panel -->
+        <div id="aiPanel" style="display:none;margin-top:6px;">
+            <div id="aiOutput" style="font-family:var(--vscode-editor-font-family,monospace);white-space:pre-wrap;font-size:12px;padding:8px;border:1px solid var(--vscode-focusBorder);border-radius:3px;max-height:180px;overflow:auto;background:var(--vscode-editor-background);"></div>
+            <div style="display:flex;gap:4px;margin-top:4px;">
+                <button id="aiAcceptBtn" class="btn-small">✓ Accept</button>
+                <button id="aiDismissBtn" class="btn-secondary btn-small">✕ Dismiss</button>
+            </div>
         </div>
 
         <div class="status" id="status">พร้อมใช้งาน</div>
@@ -741,6 +802,22 @@ class TinkerSidebarProvider {
                 <div class="stat-item"><div class="stat-num" id="statTests">0</div><div class="stat-lbl">Tests run</div></div>
                 <div style="width:100%;margin-top:4px;">
                     <button id="resetStatsBtn" class="btn-small btn-secondary" style="font-size:10px;opacity:0.6;">Reset stats</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Project Snippets panel -->
+        <div class="collapsible-panel">
+            <div class="panel-header" id="snippetsPanelHeader">
+                <span>📁 Project Snippets</span>
+                <span id="snippetsArrow">▸</span>
+            </div>
+            <div class="panel-body" id="snippetsPanelBody" style="display:none;">
+                <select id="snippetSelect" style="width:100%;margin-bottom:4px;"><option value="">— no snippets saved —</option></select>
+                <div style="display:flex;gap:4px;">
+                    <button id="loadSnippetBtn" class="btn-small" title="Load selected snippet into editor">Load</button>
+                    <button id="saveSnippetBtn" class="btn-secondary btn-small" title="Save current editor code as a snippet">Save</button>
+                    <button id="deleteSnippetBtn" class="btn-danger btn-small" title="Delete selected snippet">Delete</button>
                 </div>
             </div>
         </div>
@@ -1162,6 +1239,19 @@ class TinkerSidebarProvider {
 
             } else if (msg.type === 'showTutorial') {
                 startTutorial();
+            } else if (msg.type === 'aiChunk') {
+                aiOutput.textContent += msg.text;
+                aiOutput.scrollTop = aiOutput.scrollHeight;
+            } else if (msg.type === 'aiDone') {
+                aiAcceptBtn.style.display = 'inline-block';
+                aiDismissBtn.style.display = 'inline-block';
+                status.textContent = '✨ AI suggestion ready';
+            } else if (msg.type === 'aiError') {
+                aiPanel.style.display = 'none';
+                status.classList.add('error');
+                status.textContent = '❌ ' + msg.text;
+            } else if (msg.type === 'snippetsUpdated') {
+                renderSnippets(msg.snippets);
             }
         });
 
@@ -1212,11 +1302,84 @@ class TinkerSidebarProvider {
             vscode.postMessage({ command: 'tutorialDone' });
         }
 
+        // ── AI Suggest ─────────────────────────────────────────────
+        var aiPanel = document.getElementById('aiPanel');
+        var aiOutput = document.getElementById('aiOutput');
+        var aiSuggestBtn = document.getElementById('aiSuggestBtn');
+        var aiAcceptBtn = document.getElementById('aiAcceptBtn');
+        var aiDismissBtn = document.getElementById('aiDismissBtn');
+
+        aiSuggestBtn.addEventListener('click', function() {
+            var code = editor.value.trim();
+            if (!code) { status.textContent = '⚠️ Write some PHP code first.'; return; }
+            aiOutput.textContent = '';
+            aiPanel.style.display = 'block';
+            aiAcceptBtn.style.display = 'none';
+            aiDismissBtn.style.display = 'none';
+            status.textContent = '🤖 AI กำลังคิด...';
+            vscode.postMessage({ command: 'aiSuggest', code: code });
+        });
+
+        aiAcceptBtn.addEventListener('click', function() {
+            editor.value = aiOutput.textContent;
+            aiPanel.style.display = 'none';
+            status.textContent = '✅ AI suggestion accepted';
+        });
+
+        aiDismissBtn.addEventListener('click', function() {
+            aiPanel.style.display = 'none';
+            aiOutput.textContent = '';
+        });
+
+        // ── Project Snippets ───────────────────────────────────────
+        var _snippets = [];
+        var snippetSelect = document.getElementById('snippetSelect');
+
+        document.getElementById('snippetsPanelHeader').addEventListener('click', function() {
+            var body = document.getElementById('snippetsPanelBody');
+            var arrow = document.getElementById('snippetsArrow');
+            var open = body.style.display !== 'none';
+            body.style.display = open ? 'none' : 'block';
+            arrow.textContent = open ? '▸' : '▾';
+            if (!open) { vscode.postMessage({ command: 'getSnippets' }); }
+        });
+
+        document.getElementById('saveSnippetBtn').addEventListener('click', function() {
+            var code = editor.value.trim();
+            if (!code) { status.textContent = '⚠️ Nothing to save.'; return; }
+            var name = window.prompt('Snippet name:');
+            if (!name || !name.trim()) { return; }
+            vscode.postMessage({ command: 'saveSnippet', name: name.trim(), code: code });
+        });
+
+        document.getElementById('loadSnippetBtn').addEventListener('click', function() {
+            var id = snippetSelect.value;
+            var snip = _snippets.find(function(s) { return s.id === id; });
+            if (snip) { editor.value = snip.code; status.textContent = '📁 Snippet loaded: ' + snip.name; }
+        });
+
+        document.getElementById('deleteSnippetBtn').addEventListener('click', function() {
+            var id = snippetSelect.value;
+            if (!id) { return; }
+            var snip = _snippets.find(function(s) { return s.id === id; });
+            if (snip && window.confirm('Delete snippet "' + snip.name + '"?')) {
+                vscode.postMessage({ command: 'deleteSnippet', id: id });
+            }
+        });
+
+        function renderSnippets(snippets) {
+            _snippets = snippets || [];
+            snippetSelect.innerHTML = _snippets.length === 0
+                ? '<option value="">— no snippets saved —</option>'
+                : _snippets.map(function(s) { return '<option value="' + s.id + '">' + s.name.replace(/</g, '&lt;') + '</option>'; }).join('');
+        }
+
         // ── Init ───────────────────────────────────────────────────
         window.onerror = function(msg, src, line) {
             vscode.postMessage({ command: 'debug', text: 'Webview error: ' + msg + ' (' + src + ':' + line + ')' });
         };
         loadHistory();
+        vscode.postMessage({ command: 'getSnippets' });
         vscode.postMessage({ command: 'debug', text: 'Webview JS initialized successfully' });
     </script>
 </body>
@@ -1225,12 +1388,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v2.8.0...');
+    console.log('[Artisan Tinker] Activating v3.0.0...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v2.8.0 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.0.0 พร้อมใช้งาน');
 }
 
 function deactivate() {
