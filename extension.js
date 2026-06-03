@@ -981,7 +981,7 @@ class TinkerSidebarProvider {
             if (historySelect.options[0]) historySelect.options[0].textContent = t('history.select');
             // Tutorial (update live if open)
             var tutNext = document.getElementById('tutNext');
-            if (tutNext) tutNext.textContent = (_tutStep < TUTORIAL_STEPS.length - 1) ? t('tutNext') : t('tutDone');
+            if (tutNext && TUTORIAL_STEPS) tutNext.textContent = (_tutStep < TUTORIAL_STEPS.length - 1) ? t('tutNext') : t('tutDone');
             var tutSkipEl = document.getElementById('tutSkip');
             if (tutSkipEl) tutSkipEl.textContent = t('tutSkip');
             // Re-render templates list if panel is open
