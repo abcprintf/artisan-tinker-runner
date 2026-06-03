@@ -532,7 +532,9 @@ class TinkerSidebarProvider {
         }
 
         const workspace = vscode.workspace.workspaceFolders?.[0];
-        const modelContext = workspace ? this._scanProjectModels(workspace.uri.fsPath) : '';
+        const modelContext = (message.useModels !== false && workspace)
+            ? this._scanProjectModels(workspace.uri.fsPath)
+            : '';
 
         const prompt = [
             'You are a Laravel Tinker expert.',
@@ -806,6 +808,10 @@ class TinkerSidebarProvider {
             <button id="executeBtn" style="flex:1;">▶ Execute in Tinker</button>
             <button id="stopBtn" class="btn-danger btn-small" style="display:none;" title="หยุดการทำงาน">■ Stop</button>
             <button id="aiSuggestBtn" class="btn-secondary btn-small" title="Get AI code suggestion via GitHub Copilot">✨ AI</button>
+        </div>
+        <div style="display:flex;align-items:center;gap:6px;margin-top:4px;font-size:11px;opacity:0.8;">
+            <input type="checkbox" id="aiUseModels" checked style="margin:0;">
+            <label for="aiUseModels">ใช้ข้อมูล Models ของ project</label>
         </div>
 
         <!-- AI Suggestion panel -->
@@ -1372,7 +1378,8 @@ class TinkerSidebarProvider {
             aiAcceptBtn.style.display = 'none';
             aiDismissBtn.style.display = 'none';
             status.textContent = '🤖 AI กำลังคิด...';
-            vscode.postMessage({ command: 'aiSuggest', code: code });
+            var useModels = document.getElementById('aiUseModels').checked;
+            vscode.postMessage({ command: 'aiSuggest', code: code, useModels: useModels });
         });
 
         aiAcceptBtn.addEventListener('click', function() {
