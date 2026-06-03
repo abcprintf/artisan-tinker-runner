@@ -874,6 +874,79 @@ class TinkerSidebarProvider {
         var envBadge = document.getElementById('envBadge');
         var cachedBadge = document.getElementById('cachedBadge');
 
+        /* ── i18n ─────────────────────────────────────────────────── */
+        var TRANSLATIONS = {
+            'execute':                  { en: '▶ Execute in Tinker',          th: '▶ รัน Tinker',                                cn: '▶ 执行 Tinker' },
+            'stop':                     { en: '■ Stop',                        th: '■ หยุด',                                      cn: '■ 停止' },
+            'resetRepl':                { en: '↺ Reset',                       th: '↺ รีเซ็ต',                                    cn: '↺ 重置' },
+            'runTest':                  { en: '▶ Run Artisan Test',            th: '▶ รัน Artisan Test',                          cn: '▶ 运行 Artisan Test' },
+            'resetStats':               { en: 'Reset stats',                   th: 'รีเซ็ตสถิติ',                                 cn: '重置统计' },
+            'tutSkip':                  { en: 'Skip tour',                     th: 'ข้ามทัวร์',                                   cn: '跳过导览' },
+            'tutDone':                  { en: '✓ Done',                        th: '✓ เสร็จสิ้น',                                 cn: '✓ 完成' },
+            'tutNext':                  { en: 'Next →',                        th: 'ถัดไป →',                                     cn: '下一步 →' },
+            'history.placeholder':      { en: '🔍 Search history…',           th: '🔍 ค้นหา history…',                           cn: '🔍 搜索历史…' },
+            'history.select':           { en: '📜 Select History…',           th: '📜 เลือก History…',                           cn: '📜 选择历史…' },
+            'testFilter.placeholder':   { en: 'Filter (e.g. UserTest) — empty runs all tests', th: 'กรอง (เช่น UserTest) — เว้นว่างรันทั้งหมด', cn: '过滤 (如 UserTest) — 空则运行全部' },
+            'persistentRepl.label':     { en: 'Persistent REPL',              th: 'REPL ต่อเนื่อง',                              cn: '持久 REPL' },
+            'output.label':             { en: 'Output',                        th: 'ผลลัพธ์',                                     cn: '输出' },
+            'panel.testRunner':         { en: '🧪 Test Runner',               th: '🧪 Test Runner',                              cn: '🧪 测试运行器' },
+            'panel.stats':              { en: '📈 Usage Stats',               th: '📈 สถิติการใช้งาน',                           cn: '📈 使用统计' },
+            'panel.templates':          { en: '📁 Saved Templates',           th: '📁 เทมเพลตที่บันทึก',                         cn: '📁 保存的模板' },
+            'tooltip.pin':              { en: 'Pin/Unpin snippet',             th: 'ปักหมุด/ถอดหมุด',                             cn: '固定/取消固定' },
+            'tooltip.clearHistory':     { en: 'Clear History',                 th: 'ล้าง History',                                cn: '清除历史' },
+            'tooltip.saveTemplate':     { en: 'Save current code as template', th: 'บันทึก code เป็น template',                  cn: '保存代码为模板' },
+            'tooltip.share':            { en: 'Share as GitHub Gist',          th: 'แชร์เป็น GitHub Gist',                       cn: '分享为 GitHub Gist' },
+            'tooltip.copy':             { en: 'Copy output',                   th: 'คัดลอกผลลัพธ์',                               cn: '复制输出' },
+            'tooltip.clearOutput':      { en: 'Clear output',                  th: 'ล้างผลลัพธ์',                                 cn: '清除输出' },
+            'tooltip.resetRepl':        { en: 'Reset REPL session',            th: 'รีเซ็ต REPL session',                         cn: '重置 REPL 会话' },
+            'status.ready':             { en: 'Ready',                         th: 'พร้อมใช้งาน',                                 cn: '就绪' },
+            'status.replOn':            { en: '🔄 Persistent REPL mode',      th: '🔄 โหมด REPL ต่อเนื่อง',                     cn: '🔄 持久 REPL 模式' },
+            'status.replReset':         { en: '↺ REPL session reset',         th: '↺ รีเซ็ต REPL session',                      cn: '↺ REPL 会话已重置' },
+            'status.replResetVars':     { en: '↺ REPL reset — variables cleared', th: '↺ รีเซ็ต REPL — ล้างตัวแปรแล้ว',        cn: '↺ REPL 已重置 — 变量已清除' },
+            'status.pinUpdated':        { en: '📌 Pin updated',               th: '📌 อัปเดต Pin แล้ว',                          cn: '📌 固定已更新' },
+            'status.historyCleared':    { en: '✅ History cleared',            th: '✅ ล้าง History แล้ว',                        cn: '✅ 历史已清除' },
+            'status.templateLoaded':    { en: '📄 Template loaded: {name}',   th: '📄 โหลด template: {name}',                   cn: '📄 已加载模板: {name}' },
+            'status.templateSaved':     { en: '💾 Saved: {name}',             th: '💾 บันทึกแล้ว: {name}',                       cn: '💾 已保存: {name}' },
+            'status.modeChanged':       { en: '⚙️ Mode: {mode}',              th: '⚙️ โหมด: {mode}',                             cn: '⚙️ 模式: {mode}' },
+            'status.stopped':           { en: 'Stopped',                       th: 'หยุดแล้ว',                                    cn: '已停止' },
+            'status.gistOpened':        { en: '🌐 Gist opened in browser',    th: '🌐 เปิด Gist ในเบราว์เซอร์แล้ว',             cn: '🌐 Gist 已在浏览器中打开' },
+            'status.gistFailed':        { en: '❌ Share failed: {msg}',        th: '❌ แชร์ล้มเหลว: {msg}',                      cn: '❌ 分享失败: {msg}' },
+            'status.nothingToShare':    { en: '⚠️ Nothing to share',          th: '⚠️ ไม่มีอะไรให้แชร์',                        cn: '⚠️ 没有内容可分享' },
+            'status.noCode':            { en: '⚠️ Please enter code first',   th: '⚠️ กรุณาใส่โค้ดก่อน',                        cn: '⚠️ 请先输入代码' },
+            'status.running':           { en: '⏳ Running…',                  th: '⏳ กำลังประมวลผล…',                           cn: '⏳ 运行中…' },
+            'status.success':           { en: '✅ Success{time}',              th: '✅ สำเร็จ{time}',                              cn: '✅ 成功{time}' },
+            'status.error':             { en: '❌ Error{time}',                th: '❌ เกิดข้อผิดพลาด{time}',                    cn: '❌ 错误{time}' },
+            'status.failed':            { en: '❌ Failed',                     th: '❌ ล้มเหลว',                                  cn: '❌ 失败' },
+            'templates.empty':          { en: 'No templates yet. Save code from the editor to get started.', th: 'ยังไม่มี template บันทึก code จาก editor เพื่อเริ่มต้น', cn: '还没有模板。从编辑器保存代码以开始使用。' },
+            'templates.load':           { en: 'Load',                          th: 'โหลด',                                        cn: '加载' },
+            'tut.stepOf':               { en: 'Step {n} of {total}',          th: 'ขั้นที่ {n} จาก {total}',                    cn: '第 {n} 步，共 {total} 步' },
+            'tut.1.title':              { en: 'Write PHP Code',                th: 'เขียน PHP Code',                              cn: '编写 PHP 代码' },
+            'tut.1.desc':               { en: 'Type any PHP expression in the editor. Press ▶ Execute or Ctrl+Enter to run it via artisan tinker.', th: 'พิมพ์ PHP expression ในตัวแก้ไข กด ▶ Execute หรือ Ctrl+Enter เพื่อรันผ่าน artisan tinker', cn: '在编辑器中输入任意 PHP 表达式。按 ▶ 执行 或 Ctrl+Enter 通过 artisan tinker 运行。' },
+            'tut.2.title':              { en: 'Use Templates',                 th: 'ใช้ Templates',                               cn: '使用模板' },
+            'tut.2.desc':               { en: 'Pick a snippet from the template dropdown to insert common Laravel code instantly. Includes a Query Log capture template.', th: 'เลือก snippet จาก dropdown template เพื่อแทรก code Laravel ทั่วไปทันที รวมถึง template จับ Query Log', cn: '从模板下拉列表中选择代码片段，即时插入常用 Laravel 代码。包含查询日志捕获模板。' },
+            'tut.3.title':              { en: 'History & Pins',                th: 'History และ Pins',                            cn: '历史与固定' },
+            'tut.3.desc':               { en: 'Every successful run is saved in History. Search, select, and 📌 pin your most-used snippets so they never get evicted.', th: 'ทุกการรันที่สำเร็จจะถูกบันทึกใน History ค้นหา เลือก และ 📌 ปักหมุด snippets ที่ใช้บ่อยเพื่อไม่ให้ถูกลบ', cn: '每次成功运行都会保存在历史记录中。搜索、选择并 📌 固定最常用的代码片段，防止被清除。' },
+            'tut.4.title':              { en: 'Persistent REPL',               th: 'Persistent REPL',                             cn: '持久 REPL' },
+            'tut.4.desc':               { en: 'Toggle "Persistent REPL" to keep a single tinker process alive between runs — variables persist across executions.', th: 'เปิด "Persistent REPL" เพื่อให้ tinker process ทำงานต่อเนื่องระหว่างการรัน — ตัวแปรยังคงอยู่ข้ามการรัน', cn: '切换"持久 REPL"以在运行之间保持单个 tinker 进程存活——变量在执行之间持续存在。' },
+            'tut.5.title':              { en: 'Share & Test Runner',           th: 'แชร์และ Test Runner',                         cn: '分享与测试运行器' },
+            'tut.5.desc':               { en: 'After a run, click 🌐 Share to post your snippet as a GitHub Gist. Use 🧪 Test Runner panel to run php artisan test directly.', th: 'หลังจากรัน คลิก 🌐 Share เพื่อโพสต์ snippet เป็น GitHub Gist ใช้แผง 🧪 Test Runner เพื่อรัน php artisan test โดยตรง', cn: '运行后，点击 🌐 分享将代码片段发布为 GitHub Gist。使用 🧪 测试运行器面板直接运行 php artisan test。' }
+        };
+
+        var _lang = (function() { try { return localStorage.getItem('tinker_lang') || 'en'; } catch(e) { return 'en'; } })();
+
+        function t(key, vars) {
+            var s = (TRANSLATIONS[key] && (TRANSLATIONS[key][_lang] || TRANSLATIONS[key]['en'])) || key;
+            if (vars) Object.keys(vars).forEach(function(k) { s = s.replace('{' + k + '}', vars[k]); });
+            return s;
+        }
+
+        function applyLang(lang) {
+            _lang = lang;
+            try { localStorage.setItem('tinker_lang', lang); } catch(e) {}
+            renderAllText();
+        }
+        /* ── end i18n ──────────────────────────────────────────────── */
+
         var _lastRawOutput = '';
         var _viewMode = 'text';
         var _selectedHistoryCode = '';
