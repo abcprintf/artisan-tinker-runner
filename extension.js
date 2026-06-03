@@ -466,16 +466,36 @@ class TinkerSidebarProvider {
         });
     }
 
-    _scanProjectModels(rootPath) {
+    _detectModelNames(code) {
+        const found = new Set();
+        // ClassName:: (static calls)
+        for (const m of code.matchAll(/\b([A-Z][A-Za-z]+)::/g)) found.add(m[1]);
+        // new ClassName(
+        for (const m of code.matchAll(/new\s+([A-Z][A-Za-z]+)\s*\(/g)) found.add(m[1]);
+        // App\Models\ClassName
+        for (const m of code.matchAll(/Models\\([A-Z][A-Za-z]+)/g)) found.add(m[1]);
+        // exclude common non-model statics
+        const exclude = new Set(['DB', 'Schema', 'Cache', 'Auth', 'Log', 'Hash', 'Route',
+            'Storage', 'Event', 'Mail', 'Queue', 'Http', 'Str', 'Arr', 'Carbon', 'Collection']);
+        return [...found].filter(n => !exclude.has(n));
+    }
+
+    _scanProjectModels(rootPath, code) {
         const modelsDir = path.join(rootPath, 'app', 'Models');
         if (!fs.existsSync(modelsDir)) return '';
 
         const lines = [];
-        let files;
-        try { files = fs.readdirSync(modelsDir).filter(f => f.endsWith('.php')); }
+        let allFiles;
+        try { allFiles = fs.readdirSync(modelsDir).filter(f => f.endsWith('.php')); }
         catch (e) { return ''; }
 
-        for (const file of files.slice(0, 20)) { // cap at 20 models
+        // Smart filter: only load models referenced in the code
+        const detected = code ? this._detectModelNames(code) : [];
+        const files = detected.length > 0
+            ? allFiles.filter(f => detected.includes(f.replace('.php', '')))
+            : allFiles.slice(0, 10); // fallback: first 10
+
+        for (const file of files.slice(0, 15)) { // hard cap at 15
             const name = file.replace('.php', '');
             let src;
             try { src = fs.readFileSync(path.join(modelsDir, file), 'utf8'); }
@@ -533,7 +553,7 @@ class TinkerSidebarProvider {
 
         const workspace = vscode.workspace.workspaceFolders?.[0];
         const modelContext = (message.useModels !== false && workspace)
-            ? this._scanProjectModels(workspace.uri.fsPath)
+            ? this._scanProjectModels(workspace.uri.fsPath, code)
             : '';
 
         const prompt = [
