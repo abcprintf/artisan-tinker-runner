@@ -1070,12 +1070,12 @@ class TinkerSidebarProvider {
             templateSelect.innerHTML = _projectTemplates.length === 0
                 ? '<option value="">🧩 No templates saved yet...</option>'
                 : '<option value="">🧩 Quick insert...</option>';
-            _projectTemplates.forEach(function(t) {
+            _projectTemplates.forEach(function(tpl) {
                 var opt = document.createElement('option');
-                opt.value = t.code;
-                opt.textContent = '📄 ' + t.name;
+                opt.value = tpl.code;
+                opt.textContent = '📄 ' + tpl.name;
                 opt.dataset.project = '1';
-                opt.dataset.tname = t.name;
+                opt.dataset.tname = tpl.name;
                 templateSelect.appendChild(opt);
             });
             _selectedProjectTemplateName = null;
@@ -1090,8 +1090,8 @@ class TinkerSidebarProvider {
                 list.innerHTML = '<div style="color:var(--vscode-descriptionForeground);font-size:11px;padding:4px 0;">' + t('templates.empty') + '</div>';
                 return;
             }
-            list.innerHTML = _projectTemplates.map(function(t) {
-                var safeName = t.name.replace(/</g, '&lt;');
+            list.innerHTML = _projectTemplates.map(function(tpl) {
+                var safeName = tpl.name.replace(/</g, '&lt;');
                 return '<div style="display:flex;align-items:center;gap:4px;padding:3px 0;border-bottom:1px solid var(--vscode-widget-border);">' +
                     '<span style="font-size:14px;">📄</span>' +
                     '<span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;" title="' + safeName + '">' + safeName + '</span>' +
@@ -1102,9 +1102,9 @@ class TinkerSidebarProvider {
         }
 
         function loadTemplateByName(name) {
-            var t = _projectTemplates.find(function(t) { return t.name === name; });
-            if (!t) return;
-            editor.value = t.code;
+            var tpl = _projectTemplates.find(function(tpl) { return tpl.name === name; });
+            if (!tpl) return;
+            editor.value = tpl.code;
             editor.focus();
             status.textContent = t('status.templateLoaded', { name: name });
         }
