@@ -53,8 +53,6 @@ class TinkerSidebarProvider {
                 this._context.globalState.update('tutorialSeen_v1', true);
             } else if (message.command === 'debug') {
                 console.log('[Tinker Webview]', message.text);
-            } else if (message.command === 'aiSuggest') {
-                await this._handleAiSuggest(message.code, webviewView.webview);
             } else if (message.command === 'saveSnippet') {
                 if (message.name && message.code) {
                     const snips = this._context.workspaceState.get('tinkerSnippets', []);
@@ -68,12 +66,36 @@ class TinkerSidebarProvider {
                 webviewView.webview.postMessage({ type: 'snippetsUpdated', snippets: snips });
             } else if (message.command === 'getSnippets') {
                 webviewView.webview.postMessage({ type: 'snippetsUpdated', snippets: this._context.workspaceState.get('tinkerSnippets', []) });
+            } else if (message.command === 'loadTemplates') {
+                const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                const templates = root ? this._loadProjectTemplates(root) : [];
+                webviewView.webview.postMessage({ type: 'templatesLoaded', templates });
+            } else if (message.command === 'saveTemplate') {
+                const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                if (root && message.name && message.code) {
+                    this._saveProjectTemplate(root, message.name, message.code);
+                    webviewView.webview.postMessage({ type: 'templatesLoaded', templates: this._loadProjectTemplates(root) });
+                }
+            } else if (message.command === 'deleteTemplate') {
+                const root = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+                if (root && message.name) {
+                    this._deleteProjectTemplate(root, message.name);
+                    webviewView.webview.postMessage({ type: 'templatesLoaded', templates: this._loadProjectTemplates(root) });
+                }
             }
         });
 
         webviewView.title = 'Artisan Tinker';
-        webviewView.description = 'v3.0.2 | Ready';
+        webviewView.description = 'v3.2.0 | Ready';
         console.log('[Tinker] Webview resolved successfully');
+
+        // Send project templates on load
+        const _rootForTemplates = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+        if (_rootForTemplates) {
+            setTimeout(() => {
+                webviewView.webview.postMessage({ type: 'templatesLoaded', templates: this._loadProjectTemplates(_rootForTemplates) });
+            }, 400);
+        }
 
         // Show tutorial on first run
         const tutorialSeen = this._context.globalState.get('tutorialSeen_v1', false);
@@ -82,6 +104,29 @@ class TinkerSidebarProvider {
                 webviewView.webview.postMessage({ type: 'showTutorial' });
             }, 800);
         }
+    }
+
+    // ── Project Templates (.tinker-templates/*.php) ──────────────
+
+    _loadProjectTemplates(rootPath) {
+        const dir = path.join(rootPath, '.tinker-templates');
+        if (!fs.existsSync(dir)) return [];
+        return fs.readdirSync(dir)
+            .filter(f => f.endsWith('.php'))
+            .sort()
+            .map(f => ({ name: f.replace(/\.php$/, ''), code: fs.readFileSync(path.join(dir, f), 'utf8') }));
+    }
+
+    _saveProjectTemplate(rootPath, name, code) {
+        const dir = path.join(rootPath, '.tinker-templates');
+        if (!fs.existsSync(dir)) fs.mkdirSync(dir);
+        const safe = name.replace(/[^a-zA-Z0-9_\- ]/g, '_').trim() || 'template';
+        fs.writeFileSync(path.join(dir, safe + '.php'), code, 'utf8');
+    }
+
+    _deleteProjectTemplate(rootPath, name) {
+        const file = path.join(rootPath, '.tinker-templates', name + '.php');
+        if (fs.existsSync(file)) fs.unlinkSync(file);
     }
 
     // ── Environment detection ────────────────────────────────────
@@ -466,121 +511,6 @@ class TinkerSidebarProvider {
         });
     }
 
-    _detectModelNames(code) {
-        const found = new Set();
-        // ClassName:: (static calls)
-        for (const m of code.matchAll(/\b([A-Z][A-Za-z]+)::/g)) found.add(m[1]);
-        // new ClassName(
-        for (const m of code.matchAll(/new\s+([A-Z][A-Za-z]+)\s*\(/g)) found.add(m[1]);
-        // App\Models\ClassName
-        for (const m of code.matchAll(/Models\\([A-Z][A-Za-z]+)/g)) found.add(m[1]);
-        // exclude common non-model statics
-        const exclude = new Set(['DB', 'Schema', 'Cache', 'Auth', 'Log', 'Hash', 'Route',
-            'Storage', 'Event', 'Mail', 'Queue', 'Http', 'Str', 'Arr', 'Carbon', 'Collection']);
-        return [...found].filter(n => !exclude.has(n));
-    }
-
-    _scanProjectModels(rootPath, code, explicitModels) {
-        const modelsDir = path.join(rootPath, 'app', 'Models');
-        if (!fs.existsSync(modelsDir)) return '';
-
-        const lines = [];
-        let allFiles;
-        try { allFiles = fs.readdirSync(modelsDir).filter(f => f.endsWith('.php')); }
-        catch (e) { return ''; }
-
-        // Priority: explicit @mentions > smart-detect from code > skip
-        const wanted = explicitModels && explicitModels.length > 0
-            ? explicitModels
-            : (code ? this._detectModelNames(code) : []);
-        const files = wanted.length > 0
-            ? allFiles.filter(f => wanted.includes(f.replace('.php', '')))
-            : [];
-
-        for (const file of files.slice(0, 15)) { // hard cap at 15
-            const name = file.replace('.php', '');
-            let src;
-            try { src = fs.readFileSync(path.join(modelsDir, file), 'utf8'); }
-            catch (e) { continue; }
-
-            const fields = [];
-
-            // $fillable = ['field', ...]
-            const fillableMatch = src.match(/\$fillable\s*=\s*\[([^\]]*)\]/s);
-            if (fillableMatch) {
-                const names = [...fillableMatch[1].matchAll(/'([^']+)'/g)].map(m => m[1]);
-                fields.push(...names);
-            }
-
-            // $casts = ['field' => 'type', ...]  — add field names not already captured
-            const castsMatch = src.match(/\$casts\s*=\s*\[([^\]]*)\]/s);
-            if (castsMatch) {
-                const names = [...castsMatch[1].matchAll(/'([^']+)'\s*=>/g)].map(m => m[1]);
-                for (const n of names) { if (!fields.includes(n)) fields.push(n); }
-            }
-
-            // $table = 'tablename'
-            const tableMatch = src.match(/\$table\s*=\s*'([^']+)'/);
-            const tablePart = tableMatch ? ` [table: ${tableMatch[1]}]` : '';
-
-            // hasMany/belongsTo/hasOne relationships
-            const relMatches = [...src.matchAll(/public function (\w+)\(\)[^{]*\{[^}]*(?:hasMany|belongsTo|hasOne|belongsToMany|morphTo|morphMany)\s*\(\s*([A-Za-z]+)::class/g)];
-            const rels = relMatches.map(m => `${m[1]}()->${m[2]}`);
-
-            let summary = `${name}${tablePart}`;
-            if (fields.length) summary += `: ${fields.join(', ')}`;
-            if (rels.length) summary += ` | relations: ${rels.join(', ')}`;
-            lines.push(summary);
-        }
-
-        return lines.length ? 'Project Models:\n' + lines.map(l => '  ' + l).join('\n') : '';
-    }
-
-    async _handleAiSuggest(code, webview) {
-        if (!vscode.lm) {
-            webview.postMessage({ type: 'aiError', text: 'Language Model API not available (requires VS Code 1.90+).' });
-            return;
-        }
-        let lmModels;
-        try {
-            lmModels = await vscode.lm.selectChatModels({ vendor: 'copilot' });
-        } catch (e) {
-            webview.postMessage({ type: 'aiError', text: 'Could not access Copilot: ' + e.message });
-            return;
-        }
-        if (!lmModels || lmModels.length === 0) {
-            webview.postMessage({ type: 'aiError', text: 'GitHub Copilot not available. Please install and sign in to GitHub Copilot.' });
-            return;
-        }
-
-        const workspace = vscode.workspace.workspaceFolders?.[0];
-        const modelContext = (workspace && message.mentionedModels && message.mentionedModels.length > 0)
-            ? this._scanProjectModels(workspace.uri.fsPath, null, message.mentionedModels)
-            : '';
-
-        const userInstruction = message.prompt && message.prompt.replace(/@[A-Z][A-Za-z]+/g, '').trim();
-        const prompt = [
-            'You are a Laravel Tinker expert.',
-            modelContext || '',
-            userInstruction || 'Given this PHP snippet, suggest an improved or extended version.',
-            'Return only raw PHP code with no markdown fences or explanation:\n',
-            code
-        ].filter(Boolean).join('\n');
-
-        const msgs = [ vscode.LanguageModelChatMessage.User(prompt) ];
-        const cts = new vscode.CancellationTokenSource();
-        try {
-            const req = await lmModels[0].sendRequest(msgs, {}, cts.token);
-            for await (const chunk of req.text) {
-                webview.postMessage({ type: 'aiChunk', text: chunk });
-            }
-            webview.postMessage({ type: 'aiDone' });
-        } catch (e) {
-            webview.postMessage({ type: 'aiError', text: 'AI request failed: ' + e.message });
-        } finally {
-            cts.dispose();
-        }
-    }
 
     // ── Webview HTML ─────────────────────────────────────────────
 
@@ -628,8 +558,9 @@ class TinkerSidebarProvider {
         .btn-danger:hover { background: #e33b1a; }
         .btn-small { width: auto; padding: 4px 8px; font-size: 11px; }
         .row { display: flex; gap: 6px; align-items: center; }
-        .output-header { display: flex; gap: 4px; align-items: center; justify-content: space-between; }
+        .output-header { display: flex; gap: 4px; align-items: center; justify-content: space-between; cursor: pointer; user-select: none; }
         .output-label { font-size: 11px; opacity: 0.6; }
+        .output-chevron { font-size: 9px; opacity: 0.5; margin-left: 2px; }
         .output {
             background: var(--vscode-editor-background, #1e1e1e);
             border: 1px solid var(--vscode-editorGroup-border, #333);
@@ -780,40 +711,11 @@ class TinkerSidebarProvider {
         </div>
 
         <!-- Snippet Templates -->
-        <select id="templateSelect">
-            <option value="">🧩 Insert template...</option>
-            <optgroup label="Models">
-                <option value="User::count();">User::count();</option>
-                <option value="User::all();">User::all();</option>
-                <option value="User::find(1);">User::find(1);</option>
-                <option value="User::where('email', 'test@example.com')->first();">User::where('email', ...)->first();</option>
-                <option value="User::latest()->limit(5)->get();">User::latest()->limit(5)->get();</option>
-            </optgroup>
-            <optgroup label="Database">
-                <option value="DB::table('users')->count();">DB::table('users')->count();</option>
-                <option value="DB::select('SELECT 1');">DB::select('SELECT 1');</option>
-                <option value="Schema::getColumnListing('users');">Schema::getColumnListing('users');</option>
-            </optgroup>
-            <optgroup label="Query Log">
-                <option value="DB::enableQueryLog();">DB::enableQueryLog();</option>
-                <option value="DB::enableQueryLog();\nUser::all();\n$q = DB::getQueryLog();\nreturn $q;">🗄️ Capture query log</option>
-            </optgroup>
-            <optgroup label="App">
-                <option value="app()->environment();">app()->environment();</option>
-                <option value="config('app.name');">config('app.name');</option>
-                <option value="config('database.default');">config('database.default');</option>
-                <option value="now()->toDateTimeString();">now()->toDateTimeString();</option>
-            </optgroup>
-            <optgroup label="Cache &amp; Queue">
-                <option value="Cache::get('key');">Cache::get('key');</option>
-                <option value="Cache::flush();">Cache::flush();</option>
-                <option value="Queue::size();">Queue::size();</option>
-            </optgroup>
-            <optgroup label="Auth">
-                <option value="Auth::user();">Auth::user();</option>
-                <option value="Hash::make('password');">Hash::make('password');</option>
-            </optgroup>
-        </select>
+        <div class="row">
+            <select id="templateSelect" style="flex:1;"><option value="">🧩 Templates...</option></select>
+            <button id="saveTemplateBtn" class="btn-small btn-secondary" title="Save current editor code as project template">💾</button>
+            <button id="deleteTemplateBtn" class="btn-small btn-secondary" title="Delete selected project template" style="display:none;">🗑️</button>
+        </div>
 
         <!-- History -->
         <input type="text" id="historySearch" placeholder="🔍 ค้นหา history...">
@@ -830,32 +732,13 @@ class TinkerSidebarProvider {
         <div class="row">
             <button id="executeBtn" style="flex:1;">▶ Execute in Tinker</button>
             <button id="stopBtn" class="btn-danger btn-small" style="display:none;" title="หยุดการทำงาน">■ Stop</button>
-            <button id="aiSuggestBtn" class="btn-secondary btn-small" title="Get AI code suggestion via GitHub Copilot">✨ AI</button>
-        </div>
-
-        <!-- AI: input step -->
-        <div id="aiInputPanel" style="display:none;margin-top:6px;">
-            <textarea id="aiPromptInput" rows="2" placeholder="Ask AI... พิมพ์ @ModelName เพื่อแนบ Model context เช่น @User @Order" style="width:100%;box-sizing:border-box;font-size:12px;resize:vertical;" spellcheck="false"></textarea>
-            <div style="display:flex;gap:4px;margin-top:4px;">
-                <button id="aiSubmitBtn" class="btn-small" style="flex:1;">✨ Submit</button>
-                <button id="aiCancelBtn" class="btn-secondary btn-small">✕</button>
-            </div>
-        </div>
-
-        <!-- AI: output step -->
-        <div id="aiOutputPanel" style="display:none;margin-top:6px;">
-            <div id="aiOutput" style="font-family:var(--vscode-editor-font-family,monospace);white-space:pre-wrap;font-size:12px;padding:8px;border:1px solid var(--vscode-focusBorder);border-radius:3px;max-height:180px;overflow:auto;background:var(--vscode-editor-background);"></div>
-            <div style="display:flex;gap:4px;margin-top:4px;">
-                <button id="aiAcceptBtn" class="btn-small">✓ Accept</button>
-                <button id="aiDismissBtn" class="btn-secondary btn-small">✕ Dismiss</button>
-            </div>
         </div>
 
         <div class="status" id="status">พร้อมใช้งาน</div>
 
         <!-- Output -->
-        <div class="output-header">
-            <span class="output-label">Output <span id="viewToggle" class="view-toggle" style="display:none;">[tree]</span></span>
+        <div class="output-header" id="outputPanelHeader">
+            <span class="output-label">Output <span id="viewToggle" class="view-toggle" style="display:none;">[tree]</span><span class="output-chevron" id="outputChevron">▼</span></span>
             <div style="display:flex;gap:4px;">
                 <button id="shareBtn" class="btn-small btn-secondary" title="Share as GitHub Gist" style="display:none;">🌐 Share</button>
                 <button id="copyBtn" class="btn-small btn-secondary" title="Copy output">📋 Copy</button>
@@ -930,6 +813,9 @@ class TinkerSidebarProvider {
         var clearOutputBtn = document.getElementById('clearOutputBtn');
         var pinBtn = document.getElementById('pinBtn');
         var templateSelect = document.getElementById('templateSelect');
+        var saveTemplateBtn = document.getElementById('saveTemplateBtn');
+        var deleteTemplateBtn = document.getElementById('deleteTemplateBtn');
+        var _selectedProjectTemplateName = null;
         var viewToggle = document.getElementById('viewToggle');
         var replToggle = document.getElementById('replToggle');
         var resetReplBtn = document.getElementById('resetReplBtn');
@@ -958,6 +844,13 @@ class TinkerSidebarProvider {
             document.getElementById('statShares').textContent = a.shares || 0;
             document.getElementById('statTests').textContent = a.tests || 0;
         }
+        document.getElementById('outputPanelHeader').addEventListener('click', function(e) {
+            if (e.target.closest('button')) return;
+            var panel = document.getElementById('output');
+            var collapsed = panel.style.display === 'none';
+            panel.style.display = collapsed ? '' : 'none';
+            document.getElementById('outputChevron').textContent = collapsed ? '▼' : '▶';
+        });
         document.getElementById('analyticsHeader').addEventListener('click', function() {
             var body = document.getElementById('analyticsBody');
             var open = body.classList.toggle('open');
@@ -994,15 +887,109 @@ class TinkerSidebarProvider {
         });
 
         // ── Snippet Templates ──────────────────────────────────────
+        function renderTemplates(projectTemplates) {
+            templateSelect.innerHTML = '<option value="">🧩 Templates...</option>';
+            if (projectTemplates && projectTemplates.length > 0) {
+                var pg = document.createElement('optgroup');
+                pg.label = '📁 Project Templates';
+                projectTemplates.forEach(function(t) {
+                    var opt = document.createElement('option');
+                    opt.value = t.code;
+                    opt.textContent = t.name;
+                    opt.dataset.project = '1';
+                    opt.dataset.tname = t.name;
+                    pg.appendChild(opt);
+                });
+                templateSelect.appendChild(pg);
+            }
+            var builtins = [
+                { group: 'Models', items: [
+                    { label: 'User::count();', value: 'User::count();' },
+                    { label: 'User::all();', value: 'User::all();' },
+                    { label: 'User::find(1);', value: 'User::find(1);' },
+                    { label: "User::where('email', ...)->first();", value: "User::where('email', 'test@example.com')->first();" },
+                    { label: 'User::latest()->limit(5)->get();', value: 'User::latest()->limit(5)->get();' },
+                ]},
+                { group: 'Database', items: [
+                    { label: "DB::table('users')->count();", value: "DB::table('users')->count();" },
+                    { label: "DB::select('SELECT 1');", value: "DB::select('SELECT 1');" },
+                    { label: "Schema::getColumnListing('users');", value: "Schema::getColumnListing('users');" },
+                ]},
+                { group: 'Query Log', items: [
+                    { label: 'DB::enableQueryLog();', value: 'DB::enableQueryLog();' },
+                    { label: '🗄️ Capture query log', value: "DB::enableQueryLog();\nUser::all();\n$q = DB::getQueryLog();\nreturn $q;" },
+                ]},
+                { group: 'App', items: [
+                    { label: 'app()->environment();', value: 'app()->environment();' },
+                    { label: "config('app.name');", value: "config('app.name');" },
+                    { label: "config('database.default');", value: "config('database.default');" },
+                    { label: 'now()->toDateTimeString();', value: 'now()->toDateTimeString();' },
+                ]},
+                { group: 'Cache & Queue', items: [
+                    { label: "Cache::get('key');", value: "Cache::get('key');" },
+                    { label: 'Cache::flush();', value: 'Cache::flush();' },
+                    { label: 'Queue::size();', value: 'Queue::size();' },
+                ]},
+                { group: 'Auth', items: [
+                    { label: 'Auth::user();', value: 'Auth::user();' },
+                    { label: "Hash::make('password');", value: "Hash::make('password');" },
+                ]},
+            ];
+            builtins.forEach(function(g) {
+                var og = document.createElement('optgroup');
+                og.label = g.group;
+                g.items.forEach(function(item) {
+                    var opt = document.createElement('option');
+                    opt.value = item.value;
+                    opt.textContent = item.label;
+                    og.appendChild(opt);
+                });
+                templateSelect.appendChild(og);
+            });
+            _selectedProjectTemplateName = null;
+            deleteTemplateBtn.style.display = 'none';
+        }
+
         templateSelect.addEventListener('change', function() {
-            if (!this.value) return;
+            if (!this.value) {
+                _selectedProjectTemplateName = null;
+                deleteTemplateBtn.style.display = 'none';
+                return;
+            }
+            var selOpt = this.options[this.selectedIndex];
+            if (selOpt.dataset.project === '1') {
+                _selectedProjectTemplateName = selOpt.dataset.tname;
+                deleteTemplateBtn.style.display = 'inline-block';
+            } else {
+                _selectedProjectTemplateName = null;
+                deleteTemplateBtn.style.display = 'none';
+            }
+            var val = this.value.replace(/\\n/g, '\n');
             var pos = editor.selectionStart;
             var before = editor.value.substring(0, pos);
             var after = editor.value.substring(editor.selectionEnd);
             var sep = before.length > 0 && !before.endsWith('\n') ? '\n' : '';
-            editor.value = before + sep + this.value + '\n' + after;
+            editor.value = before + sep + val + '\n' + after;
             editor.focus();
-            this.value = '';
+        });
+
+        saveTemplateBtn.addEventListener('click', function() {
+            var code = editor.value.trim();
+            if (!code) { status.textContent = '⚠️ Editor is empty'; return; }
+            var name = prompt('Template name:', '');
+            if (!name || !name.trim()) return;
+            vscode.postMessage({ command: 'saveTemplate', name: name.trim(), code: code });
+            status.textContent = '💾 Saved: ' + name.trim();
+        });
+
+        deleteTemplateBtn.addEventListener('click', function() {
+            if (!_selectedProjectTemplateName) return;
+            if (!confirm('Delete template "' + _selectedProjectTemplateName + '"?')) return;
+            vscode.postMessage({ command: 'deleteTemplate', name: _selectedProjectTemplateName });
+            status.textContent = '🗑️ Deleted: ' + _selectedProjectTemplateName;
+            _selectedProjectTemplateName = null;
+            deleteTemplateBtn.style.display = 'none';
+            templateSelect.value = '';
         });
 
         // ── History ────────────────────────────────────────────────
@@ -1328,19 +1315,10 @@ class TinkerSidebarProvider {
 
             } else if (msg.type === 'showTutorial') {
                 startTutorial();
-            } else if (msg.type === 'aiChunk') {
-                aiOutput.textContent += msg.text;
-                aiOutput.scrollTop = aiOutput.scrollHeight;
-            } else if (msg.type === 'aiDone') {
-                aiAcceptBtn.style.display = 'inline-block';
-                aiDismissBtn.style.display = 'inline-block';
-                status.textContent = '✨ AI suggestion ready';
-            } else if (msg.type === 'aiError') {
-                aiReset();
-                status.classList.add('error');
-                status.textContent = '❌ ' + msg.text;
             } else if (msg.type === 'snippetsUpdated') {
                 renderSnippets(msg.snippets);
+            } else if (msg.type === 'templatesLoaded') {
+                renderTemplates(msg.templates);
             }
         });
 
@@ -1391,58 +1369,6 @@ class TinkerSidebarProvider {
             vscode.postMessage({ command: 'tutorialDone' });
         }
 
-        // ── AI Suggest ─────────────────────────────────────────────
-        var aiInputPanel = document.getElementById('aiInputPanel');
-        var aiOutputPanel = document.getElementById('aiOutputPanel');
-        var aiOutput = document.getElementById('aiOutput');
-        var aiSuggestBtn = document.getElementById('aiSuggestBtn');
-        var aiPromptInput = document.getElementById('aiPromptInput');
-        var aiAcceptBtn = document.getElementById('aiAcceptBtn');
-        var aiDismissBtn = document.getElementById('aiDismissBtn');
-
-        function aiReset() {
-            aiInputPanel.style.display = 'none';
-            aiOutputPanel.style.display = 'none';
-            aiOutput.textContent = '';
-            aiPromptInput.value = '';
-        }
-
-        aiSuggestBtn.addEventListener('click', function() {
-            aiReset();
-            aiInputPanel.style.display = 'block';
-            setTimeout(function() { aiPromptInput.focus(); }, 50);
-        });
-
-        document.getElementById('aiSubmitBtn').addEventListener('click', function() {
-            var code = editor.value.trim();
-            if (!code) { status.textContent = '⚠️ Write some PHP code first.'; aiReset(); return; }
-            var promptText = aiPromptInput.value.trim();
-            var mentions = [...promptText.matchAll(/@([A-Z][A-Za-z]+)/g)].map(function(m) { return m[1]; });
-            aiInputPanel.style.display = 'none';
-            aiOutputPanel.style.display = 'block';
-            aiOutput.textContent = '';
-            status.textContent = '🤖 AI กำลังคิด...';
-            vscode.postMessage({ command: 'aiSuggest', code: code, prompt: promptText, mentionedModels: mentions });
-        });
-
-        aiPromptInput.addEventListener('keydown', function(e) {
-            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-                e.preventDefault();
-                document.getElementById('aiSubmitBtn').click();
-            }
-            if (e.key === 'Escape') { aiReset(); }
-        });
-
-        document.getElementById('aiCancelBtn').addEventListener('click', aiReset);
-
-        aiAcceptBtn.addEventListener('click', function() {
-            editor.value = aiOutput.textContent;
-            aiReset();
-            status.textContent = '✅ AI suggestion accepted';
-        });
-
-        aiDismissBtn.addEventListener('click', aiReset);
-
         // ── Project Snippets ───────────────────────────────────────
         var _snippets = [];
         var snippetSelect = document.getElementById('snippetSelect');
@@ -1492,6 +1418,7 @@ class TinkerSidebarProvider {
         };
         loadHistory();
         vscode.postMessage({ command: 'getSnippets' });
+        vscode.postMessage({ command: 'loadTemplates' });
         vscode.postMessage({ command: 'debug', text: 'Webview JS initialized successfully' });
     </script>
 </body>
@@ -1500,12 +1427,12 @@ class TinkerSidebarProvider {
 }
 
 function activate(context) {
-    console.log('[Artisan Tinker] Activating v3.0.2...');
+    console.log('[Artisan Tinker] Activating v3.2.0...');
     const provider = new TinkerSidebarProvider(context.extensionUri, context);
     context.subscriptions.push(
         vscode.window.registerWebviewViewProvider('artisanTinkerView', provider)
     );
-    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.0.2 พร้อมใช้งาน');
+    vscode.window.showInformationMessage('🪄 Artisan Tinker Runner v3.2.0 พร้อมใช้งาน');
 }
 
 function deactivate() {

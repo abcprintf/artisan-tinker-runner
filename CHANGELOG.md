@@ -1,10 +1,54 @@
 # Changelog
 
+## [3.1.0] - 2026-06-03
+
+### Removed
+
+- Removed AI Suggest feature temporarily (compatibility issues with Cursor and non-Copilot editors)
+
+---
+
+## [3.0.7] - 2026-06-03
+
+### Fixed
+
+- Ask AI Submit now immediately shows "Thinking..." and the Stop button without waiting for the extension host — prevents blank silent state when the host encounters an unexpected error
+- Wrapped entire AI request flow in an outer try/catch so any unhandled error surfaces as a visible error message instead of silently doing nothing
+
+---
+
+## [3.0.6] - 2026-06-03
+
+### Fixed
+
+- Extension failed to activate — parameter named `prompt` in `_handleAiSuggest` conflicted with a `const prompt` declaration inside the same function (SyntaxError). Renamed parameter to `userPrompt`.
+- Ask AI Submit did nothing — `_handleAiSuggest` was referencing undefined `message` variable instead of its own parameters, causing a silent ReferenceError before any response was sent back to the webview
+
+---
+
+## [3.0.4] - 2026-06-03
+
+### Added
+
+- Ask AI now shows a "Thinking..." status and a Stop button while the AI is generating a response
+- Stop button cancels the in-progress AI request and shows whatever was generated so far (Accept or Dismiss)
+
+---
+
+## [3.0.3] - 2026-06-03
+
+### Fixed
+
+- Ask AI now displays error messages in the output panel instead of silently resetting when the AI request fails
+- Improved error message when no compatible AI model is found (e.g. when using Cursor without GitHub Copilot)
+
+---
+
 ## [3.0.2] - 2026-06-03
 
 ### Fixed
 
-- แก้ปุ่ม "✨ AI" ไม่แสดง input panel เมื่อ editor ว่าง (ย้าย validation ไปที่ Submit)
+- Fixed "✨ AI" button not showing the input panel when the editor is empty (moved validation to Submit)
 
 ---
 
@@ -12,13 +56,13 @@
 
 ### Added
 
-- **✨ AI Suggest — @mention Model context** — คลิก "✨ AI" เพื่อเปิด prompt input พิมพ์คำถาม + `@ModelName` (เช่น `@User @Order`) เพื่อแนบ schema ของ Model นั้นๆ เข้าไปใน context ก่อนส่ง Copilot กด Ctrl+Enter หรือ Submit เพื่อรับ suggestion
-- **✨ AI Suggest — Smart Model filter** — auto-detect ชื่อ Model จาก code ที่พิมพ์ (เช่น `User::`, `new Order()`) แล้วโหลดเฉพาะไฟล์ที่เกี่ยวข้อง รองรับ project ที่มี Models มากกว่า 100 ไฟล์
-- **✨ AI Suggest — Project Model context** — อ่าน `app/Models/*.php` และดึง `$fillable`, `$casts`, `$table`, และ relations เพื่อให้ Copilot รู้จัก schema จริงของ project
+- **✨ AI Suggest — @mention Model context** — Click "✨ AI" to open the prompt input. Type your question + `@ModelName` (e.g. `@User @Order`) to attach that Model's schema as context before sending to Copilot. Press Ctrl+Enter or Submit to receive the suggestion.
+- **✨ AI Suggest — Smart Model filter** — Auto-detects Model names from the code you've written (e.g. `User::`, `new Order()`) and loads only the relevant files. Supports projects with 100+ Models.
+- **✨ AI Suggest — Project Model context** — Reads `app/Models/*.php` and extracts `$fillable`, `$casts`, `$table`, and relations so Copilot understands your project's actual schema.
 
 ### Fixed
 
-- ยกเว้นโฟลเดอร์ `.claude/` ออกจาก VSIX package
+- Excluded `.claude/` folder from VSIX package
 
 ---
 

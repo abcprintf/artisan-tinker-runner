@@ -2,7 +2,7 @@
   "name": "artisan-tinker-runner",
   "displayName": "Artisan Tinker Runner",
   "description": "Laravel Artisan Tinker sidebar with Query Log Viewer, Gist sharing, Test Runner, Analytics & Interactive Tutorial",
-  "version": "3.0.2",
+  "version": "3.2.0",
   "publisher": "workitdee",
   "author": {
     "name": "abcprintf",
@@ -10,13 +10,31 @@
   },
   "homepage": "https://workitdee.com",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/abcprintf/artisan-tinker-runner.git" },
-  "bugs": { "url": "https://github.com/abcprintf/artisan-tinker-runner/issues" },
-  "keywords": ["laravel", "tinker", "php", "artisan", "repl", "sidebar"],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/abcprintf/artisan-tinker-runner.git"
+  },
+  "bugs": {
+    "url": "https://github.com/abcprintf/artisan-tinker-runner/issues"
+  },
+  "keywords": [
+    "laravel",
+    "tinker",
+    "php",
+    "artisan",
+    "repl",
+    "sidebar"
+  ],
   "icon": "icon.png",
-  "engines": { "vscode": "^1.90.0" },
-  "categories": ["Other"],
-  "activationEvents": ["workspaceContains:artisan"],
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "workspaceContains:artisan"
+  ],
   "main": "./extension.js",
   "contributes": {
     "viewsContainers": {
@@ -44,7 +62,9 @@
       }
     ]
   },
-  "scripts": { "vscode:prepublish": "" },
+  "scripts": {
+    "vscode:prepublish": ""
+  },
   "configuration": {
     "title": "Artisan Tinker Runner",
     "properties": {
