@@ -936,7 +936,7 @@ class TinkerSidebarProvider {
 
         function t(key, vars) {
             var s = (TRANSLATIONS[key] && (TRANSLATIONS[key][_lang] || TRANSLATIONS[key]['en'])) || key;
-            if (vars) Object.keys(vars).forEach(function(k) { s = s.replace('{' + k + '}', vars[k]); });
+            if (vars) Object.keys(vars).forEach(function(k) { s = s.split('{' + k + '}').join(vars[k]); });
             return s;
         }
 
