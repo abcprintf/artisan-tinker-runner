@@ -1,5 +1,11 @@
 # Changelog
 
+## [3.4.1] - 2026-06-03
+
+### Fixed
+- i18n: panels (Test Runner, Usage Stats, Saved Templates) failed to expand due to TUTORIAL_STEPS not yet initialized when renderAllText() ran on startup
+- i18n: template loop variable `t` shadowed the translation helper causing templates to fail loading from `.tinker-templates` folder
+
 ## [3.4.0] - 2026-06-03
 
 ### Added
